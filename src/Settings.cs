@@ -65,6 +65,12 @@ public sealed class AppSettings
     public bool RequestAutoQueue { get; set; } = false;    // experimental YouTube Music browser queue
     public int RequestCooldownSeconds { get; set; } = 60;
     public int RequestLimit { get; set; } = 50;
+    // Existing installations default to allowing all three linked platforms.
+    public bool RequestTwitchEnabled { get; set; } = true;
+    public bool RequestYouTubeEnabled { get; set; } = true;
+    public bool RequestKickEnabled { get; set; } = true;
+    // One optional literal phrase per line; this is not a safety guarantee.
+    public string RequestBlockedTerms { get; set; } = "";
 
     internal static string? TestingDirectory { get; set; }
 
@@ -121,6 +127,13 @@ public sealed class AppSettings
         if (RequestMode != "automatic") RequestMode = "approval";
         RequestCooldownSeconds = Math.Clamp(RequestCooldownSeconds, 0, 3600);
         RequestLimit = Math.Clamp(RequestLimit, 1, 100);
+        if (!SongRequests.TryNormalizeBlockedTerms(RequestBlockedTerms ?? "", out string terms))
+        {
+            // Do not silently run automatic intake with an unreadable filter.
+            terms = "";
+            RequestIntakeEnabled = false;
+        }
+        RequestBlockedTerms = terms;
         CacheSeconds = Math.Clamp(CacheSeconds, 0, 300);
         if (Port is < 1024 or > 65000) Port = 7190;
         if (string.IsNullOrWhiteSpace(Accent)) Accent = "#ff2d55";

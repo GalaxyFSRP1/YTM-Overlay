@@ -12,8 +12,8 @@
 
     <AssemblyName>YTM-Overlay</AssemblyName>
     <RootNamespace>YtmOverlay</RootNamespace>
-    <Version>0.0.0</Version>
-    <InformationalVersion>0.0.0 beta</InformationalVersion>
+    <Version>0.0.1</Version>
+    <InformationalVersion>0.0.1 beta</InformationalVersion>
     <Product>YouTube Music Overlay for OBS</Product>
     <AssemblyTitle>YouTube Music Overlay</AssemblyTitle>
     <Company>YTM Overlay contributors</Company>
@@ -37,6 +37,7 @@
     <EmbeddedResource Include="chat_bridge.js" LogicalName="YtmOverlay.chat_bridge.js" />
     <EmbeddedResource Include="chat_connect.html" LogicalName="YtmOverlay.chat_connect.html" />
     <EmbeddedResource Include="requests.html" LogicalName="YtmOverlay.requests.html" />
+    <EmbeddedResource Include="player.html" LogicalName="YtmOverlay.player.html" />
     <EmbeddedResource Include="request_overlay.html" LogicalName="YtmOverlay.request_overlay.html" />
   </ItemGroup>
 

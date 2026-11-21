@@ -17,7 +17,7 @@ namespace YtmOverlay;
 /// </summary>
 public sealed class WebServer
 {
-    public const string Version = "0.0.0";
+    public const string Version = "0.0.1";
     private readonly SessionMonitor _monitor;
     private readonly YtMusicClient _yt;
     private readonly LyricsClient _lyrics;
@@ -130,7 +130,7 @@ button{background:#323343;color:white;border:0;border-radius:9px;padding:11px 15
 <div class="step"><span class="num">3</span><div><strong>Open <a href="https://music.youtube.com/" target="_blank" rel="noopener">YouTube Music</a>, play a song, then click the bookmark.</strong>
 <p>If prompted, allow <strong>Apps on device</strong> or local-network access. You may need to set it to Allow in the browser's site settings.</p></div></div>
 <div class="step"><span class="num">4</span><div><strong>Keep the music tab open.</strong><p>After refreshing or reopening it, click the bookmark again. Click it a second time to disconnect.</p></div></div></section>
-<section><strong>Song requests (optional, experimental)</strong><p>The request dashboard can send approved songs to this linked player only if you explicitly enable player insertion. Text searches use the first result. YouTube Music's private page interfaces can change, and a request can fail or be uncertain. If you used an older bookmark, recreate it for beta request support.</p><p><a href="/requests">Open song requests</a></p></section>
+<section><strong>Player controls and song requests</strong><p>Open <a href="/player">Player &amp; tools</a> for previous, play/pause and next. These explicitly click controls in the linked music tab and may be unavailable during ads or if YouTube Music changes. Recreate this bookmark when upgrading to v0.0.1; older bookmarks continue playback sync but do not provide the new controls.</p><p>Separately, the request dashboard can send approved songs to this player only if you explicitly enable experimental insertion. Text searches use the first result. A request can fail or be uncertain. <a href="/requests">Open song requests</a>.</p></section>
 <section><strong>Private by design</strong><p>The bookmark sends the song title, artist, playback time, artwork URL and visible queue to this program on your own computer. It does not send passwords, account cookies, or music audio. Automatic lyrics lookups still use online lyric services. If enabled, request searches are also sent to YouTube Music.</p>
 <p><small>Device/loopback permission applies to the YouTube Music site, not just this overlay; it can permit access to other local services. Grant it only if you trust the site, and revoke it in browser settings. The bookmark includes a local pairing key: don't share it. If the program's port changes, make a new bookmark.</small></p></section>
 <script>document.getElementById('copy').onclick=async function(){try{await navigator.clipboard.writeText(document.getElementById('bookmark').getAttribute('href'));this.textContent='Copied!';}catch(e){this.textContent='Drag the button instead';}};</script>
@@ -318,7 +318,7 @@ button{background:#323343;color:white;border:0;border-radius:9px;padding:11px 15
             return;
         }
 
-        if (path is "/api/bridge" or "/api/bridge/ack")
+        if (path is "/api/bridge" or "/api/bridge/ack" or "/api/bridge/control-ack")
         {
             const string musicOrigin = "https://music.youtube.com";
             if (!origin.Equals(musicOrigin, StringComparison.OrdinalIgnoreCase))
@@ -332,13 +332,18 @@ button{background:#323343;color:white;border:0;border-radius:9px;padding:11px 15
                 return;
             }
             string json = Encoding.UTF8.GetString(body);
-            bool accepted = method == "POST" && (path == "/api/bridge" ? _bridge.Accept(json) : _bridge.Authenticate(json) && _requests.FinishClaim(json));
+            bool accepted = method == "POST" && (path == "/api/bridge" ? _bridge.Accept(json) :
+                path == "/api/bridge/control-ack" ? _bridge.FinishControl(json) : _bridge.Authenticate(json) && _requests.FinishClaim(json));
             string result = accepted ? "{\"ok\":true}" : "{\"ok\":false}";
-            if (accepted && path == "/api/bridge" && WantsQueueCommand(json))
+            if (accepted && path == "/api/bridge")
             {
-                var command = _requests.ClaimNext();
-                if (command != null) result = JsonSerializer.Serialize(new { ok = true, command },
-                    new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                // An explicit transport click has priority. Never send an insert
+                // and a transport action together to the same tab.
+                var transport = _bridge.ClaimControl(json);
+                var command = transport == null && WantsQueueCommand(json) ? _requests.ClaimNext() : null;
+                var wire = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                if (transport != null) result = JsonSerializer.Serialize(new { ok = true, transport }, wire);
+                else if (command != null) result = JsonSerializer.Serialize(new { ok = true, command }, wire);
             }
             await RespondAsync(stream, accepted ? 200 : 403, "application/json", Encoding.UTF8.GetBytes(result),
                 corsOrigin: musicOrigin, bridgeCors: true).ConfigureAwait(false);
@@ -353,6 +358,47 @@ button{background:#323343;color:white;border:0;border-radius:9px;padding:11px 15
                 return;
             }
             await RespondAsync(stream, 200, "text/html; charset=utf-8", Encoding.UTF8.GetBytes(BuildChatConnectPage()), noFrame: true).ConfigureAwait(false);
+            return;
+        }
+
+        if (path == "/player" && method == "GET")
+        {
+            if (!SameOriginOrLocalClient(origin, fetchSite))
+            {
+                await RespondAsync(stream, 403, "text/plain", Encoding.UTF8.GetBytes("forbidden")).ConfigureAwait(false);
+                return;
+            }
+            await RespondAsync(stream, 200, "text/html; charset=utf-8", Encoding.UTF8.GetBytes(LoadEmbedded("YtmOverlay.player.html")), noFrame: true).ConfigureAwait(false);
+            return;
+        }
+        if (path == "/api/player-status" && method == "GET")
+        {
+            if (!SameOriginOrLocalClient(origin, fetchSite))
+            {
+                await RespondAsync(stream, 403, "application/json", Encoding.UTF8.GetBytes("{\"ok\":false}")).ConfigureAwait(false);
+                return;
+            }
+            await RespondAsync(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(_bridge.ControlStateJson()), noFrame: true).ConfigureAwait(false);
+            return;
+        }
+        if (path == "/api/player-action" && method == "POST")
+        {
+            if (!SameOriginOrLocalClient(origin, fetchSite))
+            {
+                await RespondAsync(stream, 403, "application/json", Encoding.UTF8.GetBytes("{\"ok\":false}")).ConfigureAwait(false);
+                return;
+            }
+            bool ok = false; string id = "", reason = "Invalid player action.";
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("action", out var a) && a.ValueKind == JsonValueKind.String)
+                    ok = _bridge.QueueControl(a.GetString() ?? "", out id, out reason);
+            }
+            catch { }
+            string answer = JsonSerializer.Serialize(new { ok, id, error = reason });
+            await RespondAsync(stream, ok ? 200 : 400, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(answer), noFrame: true).ConfigureAwait(false);
             return;
         }
 
@@ -405,17 +451,18 @@ button{background:#323343;color:white;border:0;border-radius:9px;padding:11px 15
             return;
         }
 
-        if (path == "/" || path == "/overlay" || path == "/overlay.html" || path == "/index.html" || path == "/lyrics" || path == "/lyrics/" || path == "/queue" || path == "/queue/")
+        if (path == "/" || path == "/overlay" || path == "/overlay.html" || path == "/index.html" || path == "/lyrics" || path == "/lyrics/" || path == "/queue" || path == "/queue/" || path == "/now-playing" || path == "/now-playing/")
         {
             await RespondAsync(stream, 200, "text/html; charset=utf-8",
                 Encoding.UTF8.GetBytes(_overlayHtml)).ConfigureAwait(false);
             return;
         }
 
-        if (path == "/api/state" || path == "/api/lyrics-state" || path == "/api/queue-state")
+        if (path == "/api/state" || path == "/api/lyrics-state" || path == "/api/queue-state" || path == "/api/now-state")
         {
             // Separate sources work even if their main-overlay checkboxes are off.
-            var json = BuildStateJson(path == "/api/lyrics-state", path == "/api/queue-state");
+            // The compact player does not initiate extra lyrics/suggestions lookups.
+            var json = BuildStateJson(path == "/api/lyrics-state", path == "/api/queue-state", path == "/api/now-state");
             await RespondAsync(stream, 200, "application/json; charset=utf-8",
                 Encoding.UTF8.GetBytes(json)).ConfigureAwait(false);
             return;
@@ -511,14 +558,14 @@ button{background:#323343;color:white;border:0;border-radius:9px;padding:11px 15
 
     // ---------------- state ----------------
 
-    private string BuildStateJson(bool forceLyrics = false, bool forceQueue = false)
+    private string BuildStateJson(bool forceLyrics = false, bool forceQueue = false, bool nowOnly = false)
     {
         var now = _monitor.Current;
         var st = _settings();
         bool liveQueue = _bridge.TryGet(out var browserNow, out var browserQueue, out var queueKnown) &&
                          queueKnown && !string.IsNullOrEmpty(now.TrackId) && now.TrackId == browserNow.TrackId;
 
-        if (!string.IsNullOrEmpty(now.Title))
+        if (!nowOnly && !string.IsNullOrEmpty(now.Title))
         {
             if (!forceLyrics && !liveQueue) EnsureQueue(now, forceQueue);
             if (!forceQueue) EnsureLyrics(now, forceLyrics);

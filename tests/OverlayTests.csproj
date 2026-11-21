@@ -21,6 +21,7 @@
     <EmbeddedResource Include="../src/chat_bridge.js" LogicalName="YtmOverlay.chat_bridge.js" />
     <EmbeddedResource Include="../src/chat_connect.html" LogicalName="YtmOverlay.chat_connect.html" />
     <EmbeddedResource Include="../src/requests.html" LogicalName="YtmOverlay.requests.html" />
+    <EmbeddedResource Include="../src/player.html" LogicalName="YtmOverlay.player.html" />
     <EmbeddedResource Include="../src/request_overlay.html" LogicalName="YtmOverlay.request_overlay.html" />
   </ItemGroup>
 </Project>

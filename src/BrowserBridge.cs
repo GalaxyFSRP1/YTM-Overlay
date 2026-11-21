@@ -24,6 +24,27 @@ public sealed class BrowserBridge
     private bool _received;
     private const double LifetimeSeconds = 8;
 
+    // Explicit user-initiated transport commands are in-memory, scoped to the
+    // currently linked bookmark session, delivered at most once, and never
+    // replayed after a restart or a lost response.
+    private string _controlSession = "";
+    private bool _controlCapable;
+    private ControlJob? _waitingControl, _inFlightControl;
+    private string _lastControlId = "", _lastControlAction = "", _lastControlStatus = "idle", _lastControlSession = "";
+    private double _controlAt;
+
+    private sealed class ControlJob
+    {
+        public string Id = "";
+        public string Action = "";
+        public string Session = "";
+    }
+    public sealed class ControlCommand
+    {
+        public string Id { get; set; } = "";
+        public string Action { get; set; } = "";
+    }
+
     public BrowserBridge(string secret) => _secret = secret ?? "";
     public static string NewSecret() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
     private static double Mono() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
@@ -51,6 +72,8 @@ public sealed class BrowserBridge
             double rate = Num(root, "rate", 1, 0.05, 8);
             bool ad = Bool(root, "ad");
             bool playing = !ad && Bool(root, "playing");
+            string controlSession = Str(root, "session", 80);
+            bool controlCapable = !ad && Bool(root, "canControl") && ValidControlSession(controlSession);
             string art = SafeImage(Str(root, "art", 2048));
             bool known = Bool(root, "queueKnown") && root.TryGetProperty("items", out var a) && a.ValueKind == JsonValueKind.Array;
             var items = new List<QueueItem>();
@@ -90,6 +113,9 @@ public sealed class BrowserBridge
                 _queueKnown = known;
                 _lastSeen = mono;
                 _received = true;
+                _controlSession = controlCapable ? controlSession : "";
+                _controlCapable = controlCapable;
+                ExpireControlUnsafe(mono);
             }
             return true;
         }
@@ -118,9 +144,116 @@ public sealed class BrowserBridge
         }
     }
 
+    private static bool ValidControlSession(string value)
+    {
+        if (value.Length < 8 || value.Length > 80) return false;
+        foreach (char c in value)
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.')) return false;
+        return true;
+    }
+
+    private void ExpireControlUnsafe(double now)
+    {
+        if (_waitingControl != null && now - _controlAt > 8)
+        {
+            _waitingControl = null;
+            _lastControlStatus = "expired"; // never sent to the tab
+        }
+        if (_inFlightControl != null && now - _controlAt > 10)
+        {
+            _inFlightControl = null;
+            _lastControlStatus = "uncertain"; // a click may have occurred
+        }
+    }
+
+    public string ControlStateJson()
+    {
+        lock (_gate)
+        {
+            double now = Mono();
+            ExpireControlUnsafe(now);
+            bool linked = _received && now - _lastSeen <= LifetimeSeconds;
+            return JsonSerializer.Serialize(new {
+                linked, available = linked && _controlCapable,
+                busy = _waitingControl != null || _inFlightControl != null,
+                last = new { id = _lastControlId, action = _lastControlAction, status = _lastControlStatus }
+            });
+        }
+    }
+
+    public bool QueueControl(string action, out string id, out string reason)
+    {
+        id = ""; reason = "";
+        if (action is not ("toggle" or "previous" or "next")) { reason = "Unknown player action."; return false; }
+        lock (_gate)
+        {
+            double now = Mono();
+            ExpireControlUnsafe(now);
+            if (!_received || now - _lastSeen > LifetimeSeconds || !_controlCapable)
+            { reason = "Connect the updated music bookmark and start a song. Controls are unavailable during ads."; return false; }
+            if (_waitingControl != null || _inFlightControl != null)
+            { reason = "A player action is still in progress."; return false; }
+            var job = new ControlJob { Id = Guid.NewGuid().ToString("N"), Action = action, Session = _controlSession };
+            _waitingControl = job; _controlAt = now;
+            _lastControlId = job.Id; _lastControlAction = job.Action; _lastControlSession = job.Session; _lastControlStatus = "queued";
+            id = job.Id;
+            return true;
+        }
+    }
+
+    // Called only after a valid music-origin bridge post. Claiming removes the
+    // command from the outgoing queue; even a lost response cannot repeat it.
+    public ControlCommand? ClaimControl(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !SecretEquals(Str(root, "key", 128)) || !Bool(root, "canControl") || Bool(root, "stop")) return null;
+            string session = Str(root, "session", 80);
+            lock (_gate)
+            {
+                double now = Mono(); ExpireControlUnsafe(now);
+                if (_waitingControl == null || !_controlCapable || session != _waitingControl.Session || session != _controlSession) return null;
+                _inFlightControl = _waitingControl; _waitingControl = null; _controlAt = now; _lastControlStatus = "dispatched";
+                return new ControlCommand { Id = _inFlightControl.Id, Action = _inFlightControl.Action };
+            }
+        }
+        catch { return null; }
+    }
+
+    public bool FinishControl(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !SecretEquals(Str(root, "key", 128))) return false;
+            string id = Str(root, "id", 80), session = Str(root, "session", 80), result = Str(root, "result", 20);
+            if (result is not ("clicked" or "failed")) return false;
+            lock (_gate)
+            {
+                ExpireControlUnsafe(Mono());
+                if (_inFlightControl == null)
+                    return id == _lastControlId && session == _lastControlSession && _lastControlStatus == result;
+                if (_inFlightControl.Id != id || _inFlightControl.Session != session) return false;
+                _lastControlStatus = result;
+                _inFlightControl = null;
+                return true;
+            }
+        }
+        catch { return false; }
+    }
+
     public void Disconnect()
     {
-        lock (_gate) { _received = false; _queue.Clear(); _queueKnown = false; _clock.Reset(); _now = new NowPlaying(); }
+        lock (_gate)
+        {
+            if (_waitingControl != null) _lastControlStatus = "expired";
+            if (_inFlightControl != null) _lastControlStatus = "uncertain";
+            _waitingControl = null; _inFlightControl = null; _controlSession = ""; _controlCapable = false;
+            _received = false; _queue.Clear(); _queueKnown = false; _clock.Reset(); _now = new NowPlaying();
+        }
     }
 
     public bool Authenticate(string json)

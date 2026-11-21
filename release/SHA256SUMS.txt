@@ -1,1 +1,1 @@
-b5b2eb7ffcda23dec3610f4bd79f6998f4ead4a0a31c02cb9b5b038d54208bcf  YTM-Overlay-v0.0.0-beta.exe
+b9a780b00c726b767feeaafbae2dec471002aa6faaa5db24290ae3c994c40ea7  YTM-Overlay-v0.0.1-beta.exe

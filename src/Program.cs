@@ -30,7 +30,7 @@ internal static class Program
         {
             MessageBox.Show("YouTube Music Overlay is already running.\n\n" +
                 "If you are upgrading, right-click the old music-note icon in the system tray, choose Exit, " +
-                "then start the new v0.0.0 beta file again.",
+                "then start the new v0.0.1 beta file again.",
                 "Already running", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }

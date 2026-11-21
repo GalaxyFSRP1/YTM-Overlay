@@ -11,7 +11,8 @@
   }
   const key = '__BRIDGE_KEY__';
   const endpoint = 'http://127.0.0.1:__BRIDGE_PORT__/api/bridge';
-  let timer = 0, stopped = false, busy = false, announced = false, warned = false, commandBusy = false;
+  const session = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+  let timer = 0, stopped = false, busy = false, announced = false, warned = false, commandBusy = false, controlBusy = false;
   function message(text, duration) {
     let node = document.getElementById('ytm-overlay-bridge-notice');
     if (!node) {
@@ -166,14 +167,47 @@
     }
     if (!sent) message('Request result could not be confirmed. Check the YouTube Music queue before retrying.',12000);
   }
+  function controlButton(action) {
+    const bar = document.querySelector('ytmusic-player-bar');
+    const selectors = {toggle:'#play-pause-button button', previous:'.previous-button button', next:'.next-button button'};
+    const button = bar && selectors[action] && bar.querySelector(selectors[action]);
+    return button && !button.disabled && !button.closest('[disabled],[hidden]') ? button : null;
+  }
+  // Other buttons can be disabled by YouTube Music (for example at the start
+  // of a queue); advertise availability based on the central play/pause control.
+  function controlsReady() { return !!controlButton('toggle'); }
+  async function executeControl(command) {
+    if (!command || !/^[a-f0-9]{32}$/.test(command.id || '') || !['toggle','previous','next'].includes(command.action)) return;
+    let result = 'failed';
+    try {
+      const movie = document.querySelector('#movie_player');
+      const bar = document.querySelector('ytmusic-player-bar');
+      const ad = !!((bar && bar.hasAttribute('is-advertisement')) || (movie && movie.classList.contains('ad-showing')));
+      const button = !stopped && !ad && controlButton(command.action);
+      if (button) { button.click(); result = 'clicked'; }
+    } catch (_) {}
+    const ack = {key:key,session:session,id:command.id,result:result};
+    let sent = false;
+    for (let attempt = 0; attempt < 3 && !sent; ++attempt) {
+      try { await post(ack,'/control-ack'); sent = true; } catch (_) { await new Promise(r => setTimeout(r,1000)); }
+    }
+    if (!sent) message('Player control result could not be confirmed. Check the player before repeating it.',12000);
+  }
   async function send() {
     if (stopped || busy) return;
     busy = true;
     try {
       const data = snapshot();
-      if (data) data.canQueue = !commandBusy && !!queueParts();
+      if (data) {
+        data.session = session;
+        data.canQueue = !commandBusy && !controlBusy && !!queueParts();
+        data.canControl = !commandBusy && !controlBusy && !data.ad && controlsReady();
+      }
       const answer = await post(data || {key:key,hello:true});
-      if (answer && answer.command && !commandBusy) {
+      if (answer && answer.transport && !controlBusy) {
+        controlBusy = true;
+        executeControl(answer.transport).catch(function(){}).finally(function(){ controlBusy = false; });
+      } else if (answer && answer.command && !commandBusy) {
         commandBusy = true;
         execute(answer.command).catch(function(){}).finally(function(){ commandBusy = false; });
       }

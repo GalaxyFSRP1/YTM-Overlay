@@ -17,7 +17,7 @@ with sync_playwright() as p:
  page=b.new_page(viewport={'width':1100,'height':240}); errors=[]
  page.on('pageerror',lambda e:errors.append(str(e)))
  state=page.request.get(URL+'/api/state').json()
- check(state['version']=='0.0.0' and state['now']['title']=='No Surprises','published Windows beta EXE returns v0.0.0 live data')
+ check(state['version']=='0.0.1' and state['now']['title']=='No Surprises','published Windows beta EXE returns v0.0.1 live data')
  check(state['lyrics']['available'] and state['lyrics']['synced'],'published EXE fetched synchronized lyrics')
  check(state['queue']['source']=='browser' and state['queue']['items'][0]['title']=='Creep','published EXE exposes direct queue')
  page.goto(URL+'/',wait_until='load')

@@ -14,6 +14,7 @@ __pycache__/
 # The downloadable binary belongs in GitHub Releases, not the source repository.
 release/*.exe
 release/*.zip
+release/*.patch
 
 # Never commit private runtime data or bookmark secrets.
 YTM-Overlay/

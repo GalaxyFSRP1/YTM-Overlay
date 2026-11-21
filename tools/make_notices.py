@@ -84,7 +84,7 @@ host_version = exact_version(host_name, None if host_entries else core_version)
 core_license, core_notices = pack_files(core_name, core_version, ['LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT'])
 desktop_license, = pack_files(desktop_name, desktop_version, ['LICENSE'])
 host_license, host_notices = pack_files(host_name, host_version, ['LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT'])
-text = ('YTM Overlay v0.0.0 beta — release notices\n'
+text = ('YTM Overlay v0.0.1 beta — release notices\n'
         'Keep this file with the downloadable executable.\n'
         'This unofficial project is not affiliated with YouTube, Google, Twitch or Kick.\n'
         'External services have their own terms and privacy policies.\n'

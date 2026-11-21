@@ -44,6 +44,7 @@ jobs:
           python tests/browser_tests.py
           python tests/browser_clock_tests.py
           python tests/request_browser_tests.py
+          python tests/v001_browser_tests.py
 
   windows-exe:
     runs-on: windows-latest
@@ -61,15 +62,15 @@ jobs:
       - name: Name, checksum and include notices for this build
         shell: pwsh
         run: |
-          Move-Item release-output/YTM-Overlay.exe release-output/YTM-Overlay-v0.0.0-beta.exe
-          $hash = (Get-FileHash release-output/YTM-Overlay-v0.0.0-beta.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  YTM-Overlay-v0.0.0-beta.exe" | Out-File release-output/SHA256SUMS.txt -Encoding ascii
+          Move-Item release-output/YTM-Overlay.exe release-output/YTM-Overlay-v0.0.1-beta.exe
+          $hash = (Get-FileHash release-output/YTM-Overlay-v0.0.1-beta.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  YTM-Overlay-v0.0.1-beta.exe" | Out-File release-output/SHA256SUMS.txt -Encoding ascii
           python tools/make_notices.py src/obj/project.assets.json src/bin/Release/net10.0-windows10.0.19041.0/win-x64/YTM-Overlay.runtimeconfig.json release-output/NOTICES.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: YTM-Overlay-v0.0.0-beta-win-x64
+          name: YTM-Overlay-v0.0.1-beta-win-x64
           path: |
-            release-output/YTM-Overlay-v0.0.0-beta.exe
+            release-output/YTM-Overlay-v0.0.1-beta.exe
             release-output/SHA256SUMS.txt
             release-output/NOTICES.txt

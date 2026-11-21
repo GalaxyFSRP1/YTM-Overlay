@@ -1,4 +1,4 @@
-YTM Overlay v0.0.0 beta — release notices
+YTM Overlay v0.0.1 beta — release notices
 Keep this file with the downloadable executable.
 This unofficial project is not affiliated with YouTube, Google, Twitch or Kick.
 External services have their own terms and privacy policies.

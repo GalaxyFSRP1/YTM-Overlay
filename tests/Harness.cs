@@ -208,6 +208,7 @@ internal static class Program
         await TestWebServer();
         await TestBrowserBridge();
         await TestSongRequests();
+        await TestV001Features();
         await TestNoMatchRetry();
         await TestSlowSongRace();
     }
@@ -520,6 +521,114 @@ internal static class Program
         finally { server.Stop(); try { Directory.Delete(temp, true); } catch { } }
     }
 
+    private static async Task TestV001Features()
+    {
+        var upgraded = JsonSerializer.Deserialize<AppSettings>("{\"RequestIntakeEnabled\":true}")!;
+        upgraded.Sanitize();
+        Check(upgraded.RequestTwitchEnabled && upgraded.RequestYouTubeEnabled && upgraded.RequestKickEnabled && upgraded.RequestBlockedTerms == "",
+            "upgrading old settings preserves all three platform defaults and an empty filter");
+        Check(SongRequests.TryNormalizeBlockedTerms(" Bad Phrase \r\nＢＡＤ ＰＨＲＡＳＥ\nSpoiler", out var normalized) && normalized == "Bad Phrase\nSpoiler",
+            "blocked phrases normalize Unicode, trim and deduplicate");
+        Check(!SongRequests.TryNormalizeBlockedTerms("x", out _) && !SongRequests.TryNormalizeBlockedTerms(string.Join("\n", Enumerable.Range(0, 31).Select(i => "term" + i)), out _),
+            "invalid or oversized blocked-phrase lists are rejected");
+        string expanded = string.Join("\n", Enumerable.Range(0, 21).Select(i => new string('ﬃ', 19) + i.ToString("D2")));
+        Check(!SongRequests.TryNormalizeBlockedTerms(expanded, out _), "Unicode expansion cannot create an oversized persisted filter");
+        var corruptSettings = new AppSettings { RequestIntakeEnabled = true, RequestBlockedTerms = "x" }; corruptSettings.Sanitize();
+        Check(!corruptSettings.RequestIntakeEnabled, "invalid persisted filter fails closed by pausing request intake");
+
+        string temp = Path.Combine(Path.GetTempPath(), "ytm-v001-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        try
+        {
+            var s = new AppSettings { RequestIntakeEnabled = true, RequestMode = "automatic", RequestCooldownSeconds = 0,
+                RequestKickEnabled = false, RequestBlockedTerms = "bad phrase\nspoiler" }; s.Sanitize();
+            var requests = new SongRequests(() => s, Path.Combine(temp, "filtered.json"));
+            object Chat(string platform, string id, string viewer, string text) => new { key = s.ChatBridgeKey, platform,
+                session = "chat-session-123", channel = "creator", messages = new[] { new { id, author = viewer, text } } };
+            int Count(SongRequests r) { using var d = JsonDocument.Parse(r.StateJson()); return d.RootElement.GetProperty("items").GetArrayLength(); }
+            Check(requests.ReceiveChat(JsonSerializer.Serialize(Chat("kick", "1", "A", "!sr A good song")), "kick") && Count(requests) == 0,
+                "per-platform switch blocks requests while accepting the chat heartbeat");
+            Check(requests.ReceiveChat(JsonSerializer.Serialize(Chat("twitch", "2", "B", "!sr ＢＡＤ ＰＨＲＡＳＥ")), "twitch") && Count(requests) == 0,
+                "blocked phrase matches normalized request text without case sensitivity");
+            Check(requests.ReceiveChat(JsonSerializer.Serialize(Chat("youtube", "3", "SpoilerFan", "!sr A good song")), "youtube") && Count(requests) == 0,
+                "blocked phrase also filters viewer display names");
+            Check(requests.ReceiveChat(JsonSerializer.Serialize(Chat("twitch", "4", "C", "!sr A good song")), "twitch") && Count(requests) == 1,
+                "unblocked enabled-platform request still arrives");
+            Check(requests.ApplyAction(JsonSerializer.Serialize(new { action = "manual", song = "bad phrase by streamer" })) && Count(requests) == 2,
+                "streamer-added requests deliberately bypass viewer phrase filtering");
+            Check(!requests.ApplyAction(JsonSerializer.Serialize(new { action = "config", enabled = false, platforms = new { kick = true }, blockedTerms = "x" })) &&
+                s.RequestIntakeEnabled && !s.RequestKickEnabled, "invalid filter configuration has no partial effects");
+            Check(requests.ApplyAction(JsonSerializer.Serialize(new { action = "config", platforms = new { kick = true }, blockedTerms = "two words\nrepeat\nREPEAT" })) &&
+                s.RequestKickEnabled && s.RequestBlockedTerms == "two words\nrepeat", "platform choices and normalized filters can be saved");
+            var savedSettings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(AppSettings.FilePath));
+            Check(savedSettings != null && savedSettings.RequestKickEnabled && savedSettings.RequestBlockedTerms == "two words\nrepeat", "request filter settings persist");
+
+            var orderedSettings = new AppSettings { RequestMode = "automatic", RequestCooldownSeconds = 0 }; orderedSettings.Sanitize();
+            string orderFile = Path.Combine(temp, "ordered.json");
+            var ordered = new SongRequests(() => orderedSettings, orderFile);
+            foreach (string song in new[] { "First song", "Second song", "Third song" })
+                Check(ordered.ApplyAction(JsonSerializer.Serialize(new { action = "manual", song })), "manual queue item added: " + song);
+            string third;
+            using (var state = JsonDocument.Parse(ordered.StateJson()))
+                third = state.RootElement.GetProperty("items").EnumerateArray().First(x => x.GetProperty("song").GetString() == "Third song").GetProperty("id").GetString()!;
+            Check(ordered.ApplyAction(JsonSerializer.Serialize(new { action = "moveEarlier", id = third })) &&
+                ordered.ApplyAction(JsonSerializer.Serialize(new { action = "moveEarlier", id = third })) &&
+                !ordered.ApplyAction(JsonSerializer.Serialize(new { action = "moveEarlier", id = third })), "waiting requests can move earlier but not past the start");
+            var reloaded = new SongRequests(() => orderedSettings, orderFile);
+            using (var visible = JsonDocument.Parse(reloaded.StateJson(true)))
+                Check(visible.RootElement.GetProperty("items")[0].GetProperty("song").GetString() == "Third song", "request order persists and appears in the OBS list");
+            orderedSettings.RequestAutoQueue = true;
+            Check(reloaded.ClaimNext()?.Id == third, "reordered waiting request is claimed first by the player bridge");
+            Check(!reloaded.ApplyAction(JsonSerializer.Serialize(new { action = "moveLater", id = third })), "an in-flight request cannot be reordered");
+
+            string secret = BrowserBridge.NewSecret(); var bridge = new BrowserBridge(secret);
+            object Snap(string sess, bool can, bool ad = false) => new { key = secret, title = "Song", artist = "Artist", position = 5,
+                duration = 100, playing = true, session = sess, canControl = can, ad };
+            Check(bridge.Accept(JsonSerializer.Serialize(Snap("old-bookmark", false))) && !bridge.QueueControl("toggle", out _, out _),
+                "old or control-incapable bookmark cannot receive player actions");
+            Check(bridge.Accept(JsonSerializer.Serialize(Snap("music-tab-123", true))), "updated music bookmark registers transport capability");
+            Check(bridge.QueueControl("next", out var id, out _), "a linked capable music tab accepts an explicit player action");
+            Check(!bridge.QueueControl("previous", out _, out _), "only one transport action may be outstanding");
+            Check(bridge.ClaimControl(JsonSerializer.Serialize(Snap("other-tab-123", true))) == null, "transport command cannot be stolen by a different bookmark session");
+            var command = bridge.ClaimControl(JsonSerializer.Serialize(Snap("music-tab-123", true)));
+            Check(command != null && command.Id == id && command.Action == "next" && bridge.ClaimControl(JsonSerializer.Serialize(Snap("music-tab-123", true))) == null,
+                "player action is claimed at most once even if the response is lost");
+            Check(!bridge.FinishControl(JsonSerializer.Serialize(new { key = "wrong", id, session = "music-tab-123", result = "clicked" })) &&
+                !bridge.FinishControl(JsonSerializer.Serialize(new { key = secret, id, session = "other-tab-123", result = "clicked" })), "wrong key or session cannot acknowledge a player action");
+            var ack = JsonSerializer.Serialize(new { key = secret, id, session = "music-tab-123", result = "clicked" });
+            Check(bridge.FinishControl(ack) && bridge.FinishControl(ack), "player action acknowledgment is idempotent");
+            Check(!bridge.FinishControl(JsonSerializer.Serialize(new { key = secret, id, session = "music-tab-123", result = "failed" })), "a conflicting duplicate control acknowledgment is rejected");
+            string publicStatus = bridge.ControlStateJson();
+            Check(publicStatus.Contains("clicked") && !publicStatus.Contains(secret) && !publicStatus.Contains("music-tab-123"), "player status never exposes the key or bookmark session");
+            Check(bridge.Accept(JsonSerializer.Serialize(Snap("music-tab-123", true, true))) && !bridge.QueueControl("next", out _, out _), "player controls are unavailable during ads");
+            bridge.Accept(JsonSerializer.Serialize(Snap("music-tab-123", true)));
+            Check(!bridge.QueueControl("delete-everything", out _, out _), "only whitelisted player actions are accepted");
+
+            var httpSettings = new AppSettings { BrowserBridgeKey = secret }; httpSettings.Sanitize();
+            var monitor = new SessionMonitor { Current = Song(), Bridge = bridge };
+            var server = new WebServer(monitor, new YtMusicClient(), Client(LiveHandler()), new ManualLyricsStore(Path.Combine(temp, "lyrics.json")), () => httpSettings, bridge);
+            int port = FreePort(); Check(server.Start(port), "v0.0.1 feature server starts");
+            using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/") };
+            try
+            {
+                using var foreign = new HttpRequestMessage(HttpMethod.Post, "api/player-action") { Content = new StringContent("{\"action\":\"next\"}", Encoding.UTF8, "application/json") };
+                foreign.Headers.TryAddWithoutValidation("Origin", "https://evil.example");
+                using var bad = await http.SendAsync(foreign);
+                Check(bad.StatusCode == HttpStatusCode.Forbidden, "foreign websites cannot issue local playback actions");
+                using var ok = await http.PostAsync("api/player-action", new StringContent("{\"action\":\"toggle\"}", Encoding.UTF8, "application/json"));
+                Check(ok.IsSuccessStatusCode && (await ok.Content.ReadAsStringAsync()).Contains("\"ok\":true"), "local player action API accepts a whitelisted action");
+                using var wrongOrigin = new HttpRequestMessage(HttpMethod.Post, "api/bridge/control-ack") { Content = new StringContent(ack, Encoding.UTF8, "text/plain") };
+                wrongOrigin.Headers.TryAddWithoutValidation("Origin", "https://kick.com");
+                using var denied = await http.SendAsync(wrongOrigin);
+                Check(denied.StatusCode == HttpStatusCode.Forbidden, "chat origins cannot acknowledge player controls");
+                string player = await http.GetStringAsync("player"), compact = await http.GetStringAsync("now-playing");
+                Check(player.Contains("Player &amp; tools") && compact.Contains("now-only"), "player tools and compact OBS source are served");
+            }
+            finally { server.Stop(); }
+        }
+        finally { try { Directory.Delete(temp, true); } catch { } }
+    }
+
     private static async Task TestWebServer()
     {
         int port = FreePort();
@@ -537,7 +646,7 @@ internal static class Program
             using (var main = JsonDocument.Parse(await http.GetStringAsync("api/state")))
             {
                 Check(!main.RootElement.GetProperty("settings").GetProperty("showLyrics").GetBoolean(), "main overlay respects explicit off");
-                Check(main.RootElement.GetProperty("version").GetString() == "0.0.0", "API exposes installed version");
+                Check(main.RootElement.GetProperty("version").GetString() == "0.0.1", "API exposes installed version");
             }
             await WaitFor(async () =>
             {
@@ -567,7 +676,7 @@ internal static class Program
             }, "manual removal + refresh");
             Check(handler.Seen.Count > before, "retry performs a fresh automatic request");
             using (var debug = JsonDocument.Parse(await http.GetStringAsync("api/debug")))
-                Check(debug.RootElement.GetProperty("detectedTitle").GetString() == "Sample Track" && debug.RootElement.GetProperty("version").GetString() == "0.0.0", "diagnostics include accurate track and version");
+                Check(debug.RootElement.GetProperty("detectedTitle").GetString() == "Sample Track" && debug.RootElement.GetProperty("version").GetString() == "0.0.1", "diagnostics include accurate track and version");
             monitor.Current = new NowPlaying();
             using (var idle = JsonDocument.Parse(await http.GetStringAsync("api/lyrics-state")))
                 Check(idle.RootElement.GetProperty("now").ValueKind == JsonValueKind.Null && idle.RootElement.GetProperty("lyrics").GetProperty("reason").GetString() == "no-title", "idle state says waiting for a song");

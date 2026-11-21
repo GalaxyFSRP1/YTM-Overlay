@@ -113,6 +113,8 @@ public sealed class ControlForm : Form
         menu.Items.Add("Copy OBS Browser Source URL", null, (_, _) => CopyUrl());
         menu.Items.Add("Copy lyrics-only URL", null, (_, _) => CopyLyricsUrl());
         menu.Items.Add("Copy queue-only URL", null, (_, _) => CopyQueueUrl());
+        menu.Items.Add("Copy now-playing-only URL", null, (_, _) => CopyNowUrl());
+        menu.Items.Add("Open player and tools", null, (_, _) => OpenPlayer());
         menu.Items.Add("Connect YouTube Music browser", null, (_, _) => OpenBrowserLink());
         menu.Items.Add("Open song requests", null, (_, _) => OpenRequests());
         menu.Items.Add("Test sample lyrics", null, (_, _) => OpenLyricsTest());
@@ -153,7 +155,7 @@ public sealed class ControlForm : Form
         });
         header.Controls.Add(new Label
         {
-            Text = "v0.0.0 BETA  \u2022  for OBS Studio  \u2022  requests, lyrics and queue",
+            Text = "v0.0.1 BETA  \u2022  for OBS Studio  \u2022  requests, lyrics and queue",
             Font = new Font("Segoe UI", 8.6f), ForeColor = Muted, AutoSize = true, Location = new Point(72, 40)
         });
 
@@ -286,6 +288,12 @@ public sealed class ControlForm : Form
             ForeColor = Muted, Font = new Font("Segoe UI", 8.5f),
             Bounds = new Rectangle(14, 395, ClientSize.Width - 62, 44)
         });
+        var player = FlatButton("Player & tools", new Rectangle(14, 443, 150, 32), Color.FromArgb(64, 64, 78));
+        player.Click += (_, _) => OpenPlayer();
+        t.Controls.Add(player);
+        var nowOnly = FlatButton("Copy now-playing URL", new Rectangle(174, 443, 205, 32), Color.FromArgb(64, 64, 78));
+        nowOnly.Click += (_, _) => CopyNowUrl();
+        t.Controls.Add(nowOnly);
     }
 
     private void BuildRequestsTab(TabPage t)
@@ -790,6 +798,23 @@ public sealed class ControlForm : Form
                 "Queue source", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex) { MessageBox.Show(this, "Could not copy the URL: " + ex.Message); }
+    }
+
+    private void CopyNowUrl()
+    {
+        try
+        {
+            Clipboard.SetText(_url + "now-playing");
+            MessageBox.Show(this, "Now-playing-only URL copied!\n\nAdd it as an OBS Browser source (try 500 x 150).\n\nURL: " + _url + "now-playing",
+                "Now-playing source", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex) { MessageBox.Show(this, "Could not copy the URL: " + ex.Message); }
+    }
+
+    private void OpenPlayer()
+    {
+        try { Process.Start(new ProcessStartInfo(_url + "player") { UseShellExecute = true }); }
+        catch (Exception ex) { MessageBox.Show(this, "Could not open player tools: " + ex.Message); }
     }
 
     private void OpenBrowserLink()

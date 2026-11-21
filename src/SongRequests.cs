@@ -116,6 +116,54 @@ public sealed class SongRequests
         }
         return Regex.Replace(b.ToString(), @"\s+", " ").Trim();
     }
+    // Literal, case-insensitive substring filters. Direct video URLs do not
+    // reveal a song's title here, and clever spelling can bypass this filter.
+    public static bool TryNormalizeBlockedTerms(string input, out string normalized)
+    {
+        normalized = "";
+        try
+        {
+            if (input.Length > 1200) return false;
+            var terms = new List<string>();
+            var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string line in input.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            {
+                string term = Clean(line, 1201).Normalize(NormalizationForm.FormKC);
+                if (term.Length == 0) continue;
+                if (term.Length < 2 || term.Length > 60) return false;
+                if (unique.Add(term)) terms.Add(term);
+                if (terms.Count > 30) return false;
+            }
+            normalized = string.Join("\n", terms);
+            if (normalized.Length > 1200) { normalized = ""; return false; }
+            return true;
+        }
+        catch { return false; }
+    }
+    private static bool HasBlockedTerm(string? blockedTerms, string viewer, string query)
+    {
+        if (string.IsNullOrEmpty(blockedTerms)) return false;
+        string name = viewer.Normalize(NormalizationForm.FormKC);
+        string song = query.Normalize(NormalizationForm.FormKC);
+        foreach (string term in blockedTerms.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            if (name.Contains(term, StringComparison.OrdinalIgnoreCase) || song.Contains(term, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+    private static bool PlatformEnabled(AppSettings s, string platform) => platform switch
+    {
+        "twitch" => s.RequestTwitchEnabled,
+        "youtube" => s.RequestYouTubeEnabled,
+        "kick" => s.RequestKickEnabled,
+        _ => false
+    };
+    private static bool OptionalBool(JsonElement e, string name, ref bool value)
+    {
+        if (!e.TryGetProperty(name, out var v)) return true;
+        if (v.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false;
+        value = v.GetBoolean();
+        return true;
+    }
+
     private static bool EqualSecret(string actual, string given)
     {
         byte[] a = Encoding.UTF8.GetBytes(actual ?? ""), b = Encoding.UTF8.GetBytes(given ?? "");
@@ -209,7 +257,11 @@ public sealed class SongRequests
                         Remember(seenId);
                         var match = Command.Match(text);
                         if (!match.Success) continue;
-                        if (!_get().RequestIntakeEnabled) { source.Note = "Request ignored because intake is paused."; continue; }
+                        var settings = _get();
+                        if (!settings.RequestIntakeEnabled) { source.Note = "Request ignored because intake is paused."; continue; }
+                        if (!PlatformEnabled(settings, platform)) { source.Note = "Requests are disabled for this platform."; continue; }
+                        if (HasBlockedTerm(settings.RequestBlockedTerms, viewer, match.Groups[1].Value))
+                        { source.Note = "A request matched the streamer's blocked-phrase filter."; continue; }
                         if (!TryParseSong(match.Groups[1].Value, out string song, out string videoId))
                         { source.Note = "A request was rejected: use song text or a single YouTube video link."; continue; }
                         var incoming = new RequestRecord { Platform = platform, Channel = channel, Viewer = viewer,
@@ -334,7 +386,9 @@ public sealed class SongRequests
             }
             return JsonSerializer.Serialize(new {
                 settings = new { enabled = _get().RequestIntakeEnabled, mode = _get().RequestMode,
-                    autoQueue = _get().RequestAutoQueue, cooldown = _get().RequestCooldownSeconds, limit = _get().RequestLimit },
+                    autoQueue = _get().RequestAutoQueue, cooldown = _get().RequestCooldownSeconds, limit = _get().RequestLimit,
+                    platforms = new { twitch = _get().RequestTwitchEnabled, youtube = _get().RequestYouTubeEnabled, kick = _get().RequestKickEnabled },
+                    blockedTerms = _get().RequestBlockedTerms ?? "" },
                 sources = _sources.Values.GroupBy(x => x.Platform + "|" + x.Channel, StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.OrderByDescending(x => x.LastSeen).First())
                     .Select(x => new { x.Platform, x.Channel, online = (now - x.LastSeen).TotalSeconds <= 15, x.Note }).ToList(),
@@ -356,7 +410,9 @@ public sealed class SongRequests
                 {
                     var s = _get();
                     bool enabledValue = s.RequestIntakeEnabled, queueValue = s.RequestAutoQueue;
-                    string modeValue = s.RequestMode; int cooldownValue = s.RequestCooldownSeconds, limitValue = s.RequestLimit;
+                    bool twitchValue = s.RequestTwitchEnabled, youtubeValue = s.RequestYouTubeEnabled, kickValue = s.RequestKickEnabled;
+                    string modeValue = s.RequestMode, termsValue = s.RequestBlockedTerms ?? "";
+                    int cooldownValue = s.RequestCooldownSeconds, limitValue = s.RequestLimit;
                     if (e.TryGetProperty("enabled", out var enabled))
                     { if (enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false; enabledValue = enabled.GetBoolean(); }
                     if (e.TryGetProperty("mode", out var mode))
@@ -367,8 +423,19 @@ public sealed class SongRequests
                     { if (cool.ValueKind != JsonValueKind.Number || !cool.TryGetInt32(out int n)) return false; cooldownValue = Math.Clamp(n, 0, 3600); }
                     if (e.TryGetProperty("limit", out var limit))
                     { if (limit.ValueKind != JsonValueKind.Number || !limit.TryGetInt32(out int n)) return false; limitValue = Math.Clamp(n, 1, 100); }
+                    if (e.TryGetProperty("platforms", out var platforms))
+                    {
+                        if (platforms.ValueKind != JsonValueKind.Object || !OptionalBool(platforms, "twitch", ref twitchValue) ||
+                            !OptionalBool(platforms, "youtube", ref youtubeValue) || !OptionalBool(platforms, "kick", ref kickValue)) return false;
+                    }
+                    if (e.TryGetProperty("blockedTerms", out var terms))
+                    {
+                        if (terms.ValueKind != JsonValueKind.String || !TryNormalizeBlockedTerms(terms.GetString() ?? "", out termsValue)) return false;
+                    }
                     s.RequestIntakeEnabled = enabledValue; s.RequestMode = modeValue; s.RequestAutoQueue = queueValue;
                     s.RequestCooldownSeconds = cooldownValue; s.RequestLimit = limitValue;
+                    s.RequestTwitchEnabled = twitchValue; s.RequestYouTubeEnabled = youtubeValue; s.RequestKickEnabled = kickValue;
+                    s.RequestBlockedTerms = termsValue;
                     s.Save(); return true;
                 }
                 if (action == "clearHistory")
@@ -386,6 +453,19 @@ public sealed class SongRequests
                 string id = Get(e, "id", 80);
                 var item = _items.FirstOrDefault(x => x.Id == id);
                 if (item == null || item.Status == "adding") return false;
+                if (action is "moveEarlier" or "moveLater")
+                {
+                    // Reorder only waiting jobs. Already-sent songs are never moved
+                    // in the actual YouTube Music queue by this local operation.
+                    if (item.Status != "ready") return false;
+                    int from = _items.IndexOf(item), step = action == "moveEarlier" ? -1 : 1;
+                    int to = from + step;
+                    while (to >= 0 && to < _items.Count && _items[to].Status != "ready") to += step;
+                    if (to < 0 || to >= _items.Count) return false;
+                    (_items[from], _items[to]) = (_items[to], _items[from]);
+                    item.UpdatedUtc = DateTimeOffset.UtcNow;
+                    SaveUnsafe(); return true;
+                }
                 switch (action)
                 {
                     case "approve" when item.Status == "pending": item.Status = "ready"; item.Note = "Approved."; break;

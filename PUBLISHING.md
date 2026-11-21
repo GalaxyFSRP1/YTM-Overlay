@@ -1,43 +1,60 @@
-# Publish the first GitHub beta
+# Update GitHub to v0.0.1 beta
 
-No repository or release is created by this package. Review the code, README, license, screenshots and release notes before making them public. Replace the default MIT license if it does not reflect the permissions you intend to grant.
+This ZIP does **not** publish anything automatically. Review the source, README, release notes and license before publishing. The package includes an EXE for a GitHub release; `.gitignore` keeps large executables out of the source commit.
 
-## 1. Create and upload the repository
+## Update the existing repository
 
-1. Extract the ZIP. The extracted project folder is the repository root: it contains `src/`, `tests/`, `.github/` and this file.
-2. Create an empty repository on GitHub under your own account or organization.
-3. In the project folder, initialize Git, commit the source and connect it to **your own** repository URL:
+1. Extract the v0.0.1 ZIP to a **new folder**. Keep your existing Git repository and its `.git` folder; do not run `git init` again. Back up any work you have not committed.
+2. In Command Prompt, change to your **existing** local repository (the folder where your successful v0.0.0 push was made). Confirm it is clean, and update it:
 
-```bash
-git init
-git add .
-git commit -m "Initial v0.0.0 beta"
-git branch -M main
-git remote add origin <your-repository-url>
-git push -u origin main
+```cmd
+git status
+git pull --ff-only origin main
 ```
 
-Replace `<your-repository-url>` with the actual HTTPS or SSH URL. Do not upload local settings, request history, bookmarks, pairing keys, cookies or stream keys. `.gitignore` intentionally excludes the large `.exe`: publish it as a release asset, not a Git commit. The ZIP still includes that EXE under `release/` for you to attach.
+If you have uncommitted changes, save or commit them first. If the fast-forward pull fails, resolve that separately; do not force-push.
 
-GitHub Actions runs the portable tests, local browser fixtures and a Windows build on pushes and pull requests. If Actions are disabled, enable them in the repository settings.
+3. The included `release/UPDATE-from-v0.0.0.patch` was prepared against commit `682ea2acf8df372dee6a336c35a445f53de908aa` on the existing repository's public `main` branch. Replace the example path below with the **actual path** to the patch inside the freshly extracted v0.0.1 folder:
 
-## 2. Publish the prerelease manually
+```cmd
+git apply --check --3way "C:\path\to\YTM-Overlay-v0.0.1-beta\release\UPDATE-from-v0.0.0.patch"
+git apply --3way "C:\path\to\YTM-Overlay-v0.0.1-beta\release\UPDATE-from-v0.0.0.patch"
+git status
+git diff --cached --stat
+```
 
-1. Open **Releases → Draft a new release**.
-2. Create the tag **`v0.0.0`** against your intended commit. Use a title such as **`v0.0.0 beta`**.
-3. Paste the contents of `RELEASE_NOTES.md` into the description. Attach the extracted `release/YTM-Overlay-v0.0.0-beta.exe` and `release/SHA256SUMS.txt`.
-4. Check **Set as a pre-release**. Verify the tag and assets, then publish. The release must remain labeled beta; do not mark it as the latest stable release.
+Only run the second `git apply` if the check succeeds. If it fails, the repository may have changed; stop and resolve the differences instead of overwriting your work. `--3way` may stage the changes. Review them before committing. The patch does not contain the large EXE; the ZIP does.
 
-To verify the packaged Windows executable before uploading, in PowerShell run:
+4. Commit and push the reviewed changes:
+
+```cmd
+git add .
+git commit -m "Update to v0.0.1 beta"
+git push origin main
+```
+
+Never upload runtime settings, request history, bookmark codes, pairing keys, cookies or stream keys. The EXE and the generated patch are ignored by Git; `release/NOTICES.txt` and the checksum are tracked.
+
+## Publish the prerelease
+
+1. On GitHub, choose **Releases → Draft a new release**.
+2. Create a **new** tag `v0.0.1` against the intended commit. Do not overwrite your v0.0.0 release or tag. Use the title `v0.0.1 beta`.
+3. Paste `RELEASE_NOTES.md` into the description. Attach these three files from the **newly extracted v0.0.1 ZIP**:
+   - `release/YTM-Overlay-v0.0.1-beta.exe`
+   - `release/SHA256SUMS.txt`
+   - `release/NOTICES.txt`
+4. Select **Set as a pre-release**, review the assets and publish. The notices must accompany the EXE if redistributed.
+
+Verify the packaged executable in PowerShell:
 
 ```powershell
-Get-FileHash .\release\YTM-Overlay-v0.0.0-beta.exe -Algorithm SHA256
+Get-FileHash .\release\YTM-Overlay-v0.0.1-beta.exe -Algorithm SHA256
 ```
 
-Compare the result with `release/SHA256SUMS.txt`.
+Compare it with `release/SHA256SUMS.txt`.
 
-## Optional: build and publish via Actions instead
+## Optional: use the manual release workflow
 
-The separate **Publish v0.0.0 beta** workflow is manual-only. In GitHub **Actions**, select that workflow and run it on the intended source ref. It rebuilds the Windows EXE, computes a checksum, gathers notices for the runtime packages used in that build, and creates a GitHub **pre-release** tagged `v0.0.0` using `RELEASE_NOTES.md`. Grant Actions permission to write repository contents if required. Do not also publish the same tag manually; the workflow will fail if that release already exists. The workflow's rebuilt EXE may have a different checksum from the EXE included in this ZIP.
+The **Publish v0.0.1 beta** Actions workflow is manual-only. Run it on the intended source ref to rebuild the EXE, compute its checksum, generate notices for that build's runtime and create a `v0.0.1` pre-release. Grant Actions permission to write repository contents if needed. Do not publish the same tag manually as well. A rebuilt EXE can have a different checksum from the packaged one.
 
-For a later version, deliberately update the application version, documentation, release notes and the manually scoped release workflow; the initial `v0.0.0` tag should not be reused.
+If starting a different, empty repository, initialize Git in the extracted project folder, commit the source and add your own remote URL. If the remote already has commits, integrate its history rather than using a force-push.

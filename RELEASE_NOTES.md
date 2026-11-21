@@ -1,24 +1,25 @@
-# v0.0.0 beta — first public beta
+# v0.0.1 beta
 
-This is the first public beta of the unofficial YouTube Music OBS overlay. The Windows x64 executable is self-contained and unsigned; no separate .NET runtime is needed.
+A balanced update to the unofficial Windows YouTube Music / OBS overlay. The x64 executable is self-contained and unsigned; no separate .NET install is needed. This is still a beta: test with your own setup before streaming.
 
-## What's included
+## New in this beta
 
-- Now playing, a smoother browser-linked playback clock, synchronized/plain lyrics, a live lyric preview, and locally saved manual lyrics.
-- A browser-linked **Up next** queue, with clearly labeled public suggestions when the real queue is unavailable. Separate OBS sources for lyrics, music queue and viewer requests.
-- A local viewer-request dashboard for **Twitch, YouTube Live and Kick**. Viewers can use `!sr` with a song name or single YouTube video URL. Choose **approval** or **automatic acceptance**. Requests start paused.
-- Duplicate and cooldown checks, an open-request limit, manual adding, moderation/history controls, and per-chat link status.
-- An **opt-in experimental** feature to insert accepted requests into a linked YouTube Music browser queue. Text searches choose the first result; the wrong match is possible. Acceptance alone does not change the player.
-- A move to the .NET 10 LTS runtime for this self-contained build.
+- **Player & tools:** previous, play/pause and next for the linked YouTube Music browser, quick OBS-source links, copy song text and a diagnostic summary that excludes song titles, viewer names, request content, channel names and pairing keys.
+- **Now-playing-only OBS source** at `/now-playing`, plus an anonymous requests source that hides viewer names on stream. Request overlay URLs can set a row limit and accent color.
+- **Request moderation:** independent Twitch/YouTube Live/Kick intake switches and an optional blocked-phrase filter for viewer names and request text.
+- **Request organization:** search the dashboard, move waiting approved requests earlier or later, and export local request history to CSV (including spreadsheet-formula protection).
+- Existing approval/automatic request handling, lyrics, queue sources, timing controls and opt-in experimental player insertion remain available.
 
-## Before going live
+## Upgrading and important limits
 
-Read the setup and privacy instructions in the README. Keep each chat tab open, allow local-network permission for the sites you trust, and use YouTube Live's pop-out chat. Each site can change its page layout. No bot replies are sent. Music broadcast rights are the streamer's responsibility.
+Exit the old copy via its tray icon before starting this EXE. Existing settings, request history and saved lyrics are reused; back up `%APPDATA%\YTM-Overlay` first if desired. **Recreate the music bookmark** from v0.0.1 to enable the new playback buttons. The controls click the connected YouTube Music page, not Windows media controls; a click acknowledgment is not a playback guarantee. They may be unavailable during ads, queue insertion or site changes. Check the player before retrying an uncertain action.
 
-Player insertion is off by default. It uses undocumented YouTube Music page interfaces and may fail. If a result is uncertain, check the actual player queue before retrying. Marking a request done does not remove it from the player. In automatic mode, unreviewed request text and names can appear on the requests overlay.
+Blocked phrases are literal text checks, not comprehensive moderation: they do not identify the song behind a video URL. Reordering affects only waiting local requests, not the actual player queue after insertion. Anonymous mode hides the requester-name field on the OBS source only, not names included in song text; the local inbox/API and exported CSV still contain names. Keep CSV files private. Automatic mode can display unreviewed request text.
 
-## Verification and limitations
+Player insertion is off by default and uses undocumented YouTube Music interfaces. It can fail or be uncertain; inspect the player before retrying. Music broadcast rights remain the streamer's responsibility.
 
-Automated core, browser-fixture and Wine checks passed. A real **signed-out** YouTube Music browser queue was tested for direct-link and text-search insertion. Three live chat page layouts were exercised with synthetic browser-local rows, not actual viewer messages. Real Windows, OBS, signed-in YouTube Music, and live end-to-end viewer traffic remain unverified. Please report issues with steps to reproduce; do **not** include bookmark codes, pairing keys, cookies or stream keys.
+## Verification
 
-Attach `YTM-Overlay-v0.0.0-beta.exe`, `SHA256SUMS.txt` and `NOTICES.txt` to the GitHub release and mark it as a **pre-release**.
+Automated core, browser-fixture and Wine checks passed. A disposable signed-out YouTube Music browser was tested for queue insertion, play/pause and next. Previous was tested in a browser fixture. Chat page selectors were exercised with synthetic local rows, not actual viewer messages. Real Windows, OBS, signed-in accounts, and live end-to-end viewer traffic remain unverified.
+
+Attach `YTM-Overlay-v0.0.1-beta.exe`, `SHA256SUMS.txt` and `NOTICES.txt` to the `v0.0.1` release and mark it as a **pre-release**. See `PUBLISHING.md` for updating the existing repository safely.

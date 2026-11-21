@@ -193,6 +193,13 @@
   body.queue-only #stage .card, body.queue-only #stage .lyrics{display:none!important}
   body.queue-only #stage .queue{width:100%;height:100%;min-height:0;flex:1 1 auto}
   body.queue-only .qrows{justify-content:flex-start}
+  /* A compact, independent card for streamers who want only the current song. */
+  body.now-only{padding:0!important}
+  body.now-only #stage,body.now-only #stage.stacked{width:100%;height:100%;gap:0;display:flex;flex-direction:row;align-items:stretch}
+  body.now-only #stage .lyrics,body.now-only #stage .queue{display:none!important}
+  body.now-only #stage .card{width:100%;height:100%;min-width:0;flex:1 1 auto}
+  body.now-only .meta{width:auto;min-width:0;flex:1 1 auto}
+  body.now-only .art{width:min(var(--art),calc(100vh - 1.7em));height:min(var(--art),calc(100vh - 1.7em))}
   .qempty{font-size:.84em;color:var(--fg3);font-style:italic;padding:.5em 0;line-height:1.35}
   body.clean .panel-base{background:transparent!important;border-color:transparent!important;box-shadow:none!important;
     -webkit-backdrop-filter:none!important;backdrop-filter:none!important}
@@ -282,8 +289,10 @@
   var DEMO = /[?&]demo=1/.test(location.search);
   var LYRICS_ONLY = /^\/lyrics\/?$/i.test(location.pathname);
   var QUEUE_ONLY = /^\/queue\/?$/i.test(location.pathname);
+  var NOW_ONLY = /^\/now-playing\/?$/i.test(location.pathname);
   if(LYRICS_ONLY) body.classList.add('lyrics-only');
   if(QUEUE_ONLY) body.classList.add('queue-only');
+  if(NOW_ONLY) body.classList.add('now-only');
 
   function fmt(s){
     if(!isFinite(s) || s < 0) s = 0;
@@ -637,6 +646,16 @@
                       : (S.lyricMode === 'static' ? Math.min(lyrLines + 2, 8) : lyrLines);
     var lyrH = LYR_HEAD + lyrBodyLines * LYR_LINE + 1.4;
 
+    if(NOW_ONLY){
+      $.stage.classList.remove('stacked');
+      body.classList.remove('pos-center','pos-bc','pos-bl','pos-br','pos-tl','pos-tr');
+      var nowWidth = CARD_W - (st.showArt === false ? 9.6 : 0);
+      var nowFit = Math.min(w / (nowWidth * 16), h / (CARD_H * 16));
+      var nowScale = Math.max(0.1, Math.min(3, nowFit, st.scale == null ? 1 : st.scale));
+      document.documentElement.style.setProperty('--s', nowScale.toFixed(4));
+      return;
+    }
+
     if(QUEUE_ONLY){
       $.stage.classList.remove('stacked');
       body.classList.remove('pos-center','pos-bc','pos-bl','pos-br','pos-tl','pos-tr');
@@ -749,7 +768,7 @@
     }
     try{
       var started = performance.now();
-      var r = await fetch(LYRICS_ONLY ? '/api/lyrics-state' : (QUEUE_ONLY ? '/api/queue-state' : '/api/state'), {cache:'no-store'});
+      var r = await fetch(LYRICS_ONLY ? '/api/lyrics-state' : (QUEUE_ONLY ? '/api/queue-state' : (NOW_ONLY ? '/api/now-state' : '/api/state')), {cache:'no-store'});
       if(!r.ok) throw 0;
       var j = await r.json();
       var latency = (performance.now() - started) / 2000;
