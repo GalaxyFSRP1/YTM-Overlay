@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Harness.cs" />
+    <Compile Include="../src/LyricsClient.cs" Link="LyricsClient.cs" />
+    <Compile Include="../src/ManualLyricsStore.cs" Link="ManualLyricsStore.cs" />
+    <Compile Include="../src/Models.cs" Link="Models.cs" />
+    <Compile Include="../src/TimelineClock.cs" Link="TimelineClock.cs" />
+    <Compile Include="../src/BrowserBridge.cs" Link="BrowserBridge.cs" />
+    <Compile Include="../src/Settings.cs" Link="Settings.cs" />
+    <Compile Include="../src/SongRequests.cs" Link="SongRequests.cs" />
+    <Compile Include="../src/WebServer.cs" Link="WebServer.cs" />
+    <EmbeddedResource Include="../src/overlay.html" LogicalName="YtmOverlay.overlay.html" />
+    <EmbeddedResource Include="../src/bridge.js" LogicalName="YtmOverlay.bridge.js" />
+    <EmbeddedResource Include="../src/chat_bridge.js" LogicalName="YtmOverlay.chat_bridge.js" />
+    <EmbeddedResource Include="../src/chat_connect.html" LogicalName="YtmOverlay.chat_connect.html" />
+    <EmbeddedResource Include="../src/requests.html" LogicalName="YtmOverlay.requests.html" />
+    <EmbeddedResource Include="../src/request_overlay.html" LogicalName="YtmOverlay.request_overlay.html" />
+  </ItemGroup>
+</Project>

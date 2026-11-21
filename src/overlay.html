@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Now Playing</title>
+<style>
+  :root{
+    --accent:#ff2d55;
+    --accent2:#7c5cff;
+    --s:1;
+    --blur:20px;
+    --radius:1.05em;
+    --panel:rgba(15,15,19,.66);
+    --line:rgba(255,255,255,.10);
+    --fg:#fff;
+    --fg2:rgba(255,255,255,.75);
+    --fg3:rgba(255,255,255,.45);
+    --shadow:0 1em 2.4em rgba(0,0,0,.45);
+    --track:rgba(255,255,255,.16);
+    --art:8.6em;
+    --card-meta:15.2em;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden}
+  body{
+    font-family:"Segoe UI Variable Display","Segoe UI",Inter,system-ui,-apple-system,Roboto,Arial,sans-serif;
+    color:var(--fg);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    display:flex;align-items:center;justify-content:center;
+  }
+  body.pos-bc{align-items:flex-end;justify-content:center;padding:0 0 1em}
+  body.pos-bl{align-items:flex-end;justify-content:flex-start;padding:0 0 1em 1em}
+  body.pos-br{align-items:flex-end;justify-content:flex-end;padding:0 1em 1em 0}
+  body.pos-tl{align-items:flex-start;justify-content:flex-start;padding:1em 0 0 1em}
+  body.pos-tr{align-items:flex-start;justify-content:flex-end;padding:1em 1em 0 0}
+  body.upper .title,body.upper .artist,body.upper .album,body.upper .label,
+  body.upper .qtitle,body.upper .qartist,body.upper .qhead,body.upper .lyr-head{text-transform:uppercase}
+
+  #stage{
+    display:flex;gap:.8em;align-items:center;justify-content:center;
+    font-size:calc(16px * var(--s));
+    transform-origin:center center;
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  body.empty #stage{opacity:0;transform:translateY(.6em) scale(.985)}
+  body.paused.dim-paused #stage{opacity:.6}
+  body.paused.hide-paused #stage{opacity:0;pointer-events:none}
+  #stage.stacked{flex-direction:column;align-items:stretch}
+  #stage.stacked .card{width:auto}
+  .panel-base{
+    background:linear-gradient(135deg,var(--panel) 0%,rgba(9,9,12,.76) 100%);
+    border:1px solid var(--line);
+    box-shadow:var(--shadow);
+    -webkit-backdrop-filter:blur(var(--blur)) saturate(150%);
+    backdrop-filter:blur(var(--blur)) saturate(150%);
+  }
+
+  /* ---------- now playing card ---------- */
+  .card{
+    position:relative;flex:0 0 auto;display:flex;align-items:center;gap:1.05em;
+    padding:.85em;border-radius:var(--radius);overflow:hidden;
+  }
+  .card::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.08), transparent 55%);
+  }
+  .card.swap{animation:swap .55s cubic-bezier(.2,.75,.25,1) both}
+  @keyframes swap{from{opacity:.2;transform:translateY(.45em) scale(.99)}to{opacity:1;transform:none}}
+
+  .art{
+    position:relative;flex:0 0 auto;width:var(--art);height:var(--art);
+    border-radius:.8em;overflow:hidden;background:linear-gradient(140deg,#26262e,#141419);
+    box-shadow:0 .45em 1.3em rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.07) inset;
+  }
+  .art.hide{display:none}
+  .art img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .45s ease, transform 7s ease-out}
+  .art img.on{opacity:1;transform:scale(1.001)}
+  body.paused .art img{filter:saturate(.6) brightness(.86)}
+
+  .meta{flex:0 0 auto;width:var(--card-meta);display:flex;flex-direction:column;justify-content:center;gap:.2em}
+  .label{
+    display:flex;align-items:center;gap:.55em;margin-bottom:.18em;
+    font-size:.62em;font-weight:700;letter-spacing:.2em;
+    color:var(--accent);white-space:nowrap;overflow:hidden;
+  }
+  .label.hide{display:none}
+  .label .dot{flex:0 0 auto;width:.45em;height:.45em;border-radius:50%;background:var(--accent);
+    animation:pulse 2.2s ease-out infinite}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 65%,transparent)}
+    70%{box-shadow:0 0 0 .6em transparent}
+    100%{box-shadow:0 0 0 0 transparent}
+  }
+  body.paused .label .dot{animation:none;background:var(--fg3)}
+  .label .txt{overflow:hidden;text-overflow:ellipsis}
+
+  .title{font-size:1.55em;font-weight:700;line-height:1.18;letter-spacing:-.012em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.28)}
+  .title > span{display:inline-block}
+  .title.scroll{text-overflow:clip;
+    mask-image:linear-gradient(90deg,transparent 0,#000 3%,#000 96%,transparent 100%);
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 3%,#000 96%,transparent 100%)}
+  .title.scroll > span{display:inline-block;padding-right:2em;animation:marquee 15s linear infinite}
+  @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  .artist{font-size:.98em;font-weight:500;color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .album{font-size:.75em;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .album.hide{display:none}
+
+  .prog{margin-top:.55em;display:flex;flex-direction:column;gap:.32em}
+  .prog.hide{display:none}
+  .track{position:relative;height:.24em;border-radius:99px;background:var(--track);overflow:hidden}
+  .fill{position:absolute;inset:0;width:0%;border-radius:99px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    box-shadow:0 0 .7em color-mix(in srgb,var(--accent) 60%,transparent)}
+  .times{display:flex;justify-content:space-between;font-size:.66em;color:var(--fg3);
+    font-variant-numeric:tabular-nums;letter-spacing:.03em}
+  .times.hide{display:none}
+
+  /* ---------- queue ---------- */
+  .queue{
+    flex:0 0 auto;width:18.8em;padding:.8em .9em .75em;border-radius:var(--radius);
+    display:flex;flex-direction:column;gap:.55em;overflow:hidden;
+  }
+  #stage:not(.stacked) .queue{min-height:10.3em}
+  .queue.hide{display:none}
+  .qhead{display:flex;align-items:baseline;justify-content:space-between;gap:.5em;
+    font-size:.6em;font-weight:700;letter-spacing:.2em;color:var(--fg3);white-space:nowrap}
+  .qhead b{color:var(--accent)}
+  .qrows{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;gap:.55em}
+  .qrow{display:flex;align-items:center;gap:.55em;min-width:0;animation:qin .45s ease both}
+  @keyframes qin{from{opacity:0;transform:translateX(.4em)}to{opacity:1;transform:none}}
+  .qnum{flex:0 0 auto;width:.9em;text-align:right;font-size:.7em;color:var(--fg3);font-variant-numeric:tabular-nums}
+  .qnum.hide{display:none}
+  .qthumb{flex:0 0 auto;width:1.85em;height:1.85em;border-radius:.35em;object-fit:cover;
+    background:linear-gradient(140deg,#2c2c36,#17171c);box-shadow:0 0 0 1px rgba(255,255,255,.06) inset}
+  .qthumb.hide{display:none}
+  .qnote{display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.32)}
+  body[data-theme="light"] .qnote{color:rgba(0,0,0,.3)}
+  .qmeta{min-width:0;flex:1 1 auto;display:flex;flex-direction:column;gap:.04em}
+  .qtitle{font-size:.84em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+  .qartist{font-size:.68em;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25}
+  .qartist.hide{display:none}
+
+  /* ---------- lyrics ---------- */
+  .lyrics{
+    flex:0 0 auto;width:20.4em;padding:.8em .95em .85em;border-radius:var(--radius);
+    display:flex;flex-direction:column;gap:.3em;overflow:hidden;
+    animation:lyin .5s cubic-bezier(.2,.75,.25,1) both;
+  }
+  .lyrics.hide{display:none}
+  #stage:not(.stacked) .lyrics{min-height:10.3em}
+  @keyframes lyin{from{opacity:0;transform:translateY(.5em)}to{opacity:1;transform:none}}
+  .lyr-head{display:flex;align-items:center;gap:.45em;font-size:.58em;font-weight:700;
+    letter-spacing:.2em;color:var(--accent);white-space:nowrap;overflow:hidden}
+  .lyr-head .spark{width:.5em;height:.5em;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 .6em var(--accent);flex:0 0 auto}
+  .lyr-head .src{margin-left:auto;color:var(--fg3);font-weight:600;letter-spacing:.12em;font-size:.9em}
+  .lyr-body{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;
+    flex:1 1 auto;gap:.42em;padding:.1em 0}
+  .lyr-line{
+    font-size:1.02em;line-height:1.32;color:var(--fg3);font-weight:550;
+    transition:color .28s ease, opacity .28s ease, transform .28s ease;
+    transform-origin:left center;white-space:normal;
+  }
+  .lyr-line.active{color:var(--fg);font-weight:700;transform:scale(1.035)}
+  body[data-theme="neon"] .lyr-line.active{color:#fff;
+    text-shadow:0 0 .7em color-mix(in srgb,var(--accent) 70%,transparent)}
+  .lyr-line.done{opacity:.55}
+  .lyr-synced .lyr-line{opacity:.5}
+  .lyr-synced .lyr-line.active{opacity:1}
+  .lyr-static{font-size:.9em;line-height:1.45;color:var(--fg2);white-space:pre-wrap;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:12;-webkit-box-orient:vertical}
+  .lyr-msg{font-size:.82em;color:var(--fg3);font-style:italic;line-height:1.35}
+  .lyr-dots{display:inline-block;animation:dots 1.4s steps(4,end) infinite}
+  @keyframes dots{0%{content:""}}
+
+  /* An independent OBS Browser source: it stays visible even while idle and
+     fills the source rectangle, so it can be placed anywhere in the scene. */
+  body.lyrics-only{padding:0!important}
+  body.lyrics-only #stage, body.lyrics-only #stage.stacked{
+    width:100%;height:100%;gap:0;display:flex;flex-direction:row;align-items:stretch;
+  }
+  body.lyrics-only.empty #stage{opacity:1;transform:none}
+  body.lyrics-only #stage .card, body.lyrics-only #stage .queue{display:none!important}
+  body.lyrics-only #stage .lyrics{width:100%;height:100%;min-height:0;flex:1 1 auto}
+  body.lyrics-only #stage .lyrics.hide{display:none}
+  body.queue-only{padding:0!important}
+  body.queue-only #stage, body.queue-only #stage.stacked{
+    width:100%;height:100%;gap:0;display:flex;flex-direction:row;align-items:stretch;
+  }
+  body.queue-only.empty #stage{opacity:1;transform:none}
+  body.queue-only #stage .card, body.queue-only #stage .lyrics{display:none!important}
+  body.queue-only #stage .queue{width:100%;height:100%;min-height:0;flex:1 1 auto}
+  body.queue-only .qrows{justify-content:flex-start}
+  .qempty{font-size:.84em;color:var(--fg3);font-style:italic;padding:.5em 0;line-height:1.35}
+  body.clean .panel-base{background:transparent!important;border-color:transparent!important;box-shadow:none!important;
+    -webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  body.clean .card::before,body.clean .card::after{display:none!important}
+  body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{animation:none!important;transition:none!important}
+  body.lyrics-center .lyr-body{text-align:center;align-items:stretch}
+  body.lyrics-center .lyr-line{transform-origin:center center}
+
+  /* ---------- themes ---------- */
+  body[data-theme="minimal"]{
+    --panel:rgba(0,0,0,.8);--blur:0px;--radius:.5em;--line:rgba(255,255,255,.07);
+    --shadow:0 .5em 1.5em rgba(0,0,0,.5);
+  }
+  body[data-theme="minimal"] .card::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:.2em;background:var(--accent);z-index:2
+  }
+  body[data-theme="minimal"] .card::after{display:none}
+  body[data-theme="neon"]{
+    --panel:rgba(9,11,20,.84);--blur:12px;
+    --line:color-mix(in srgb,var(--accent) 45%,transparent);
+    --shadow:0 0 1.5em color-mix(in srgb,var(--accent) 30%,transparent), 0 .9em 1.8em rgba(0,0,0,.5);
+  }
+  body[data-theme="neon"] .title{text-shadow:0 0 .8em color-mix(in srgb,var(--accent) 60%,transparent)}
+  body[data-theme="neon"] .card::after{background:radial-gradient(110% 100% at 0% 0%, color-mix(in srgb,var(--accent) 20%,transparent), transparent 62%)}
+  body[data-theme="neon"] .lyrics{box-shadow:0 0 1.4em color-mix(in srgb,var(--accent2) 28%,transparent)}
+  body[data-theme="light"]{
+    --panel:rgba(255,255,255,.9);--line:rgba(0,0,0,.08);
+    --fg:#0e0e12;--fg2:rgba(14,14,18,.7);--fg3:rgba(14,14,18,.45);
+    --track:rgba(0,0,0,.13);--shadow:0 .9em 2.2em rgba(0,0,0,.2);
+  }
+  body[data-theme="light"] .card,
+  body[data-theme="light"] .queue,
+  body[data-theme="light"] .lyrics{background:linear-gradient(135deg,rgba(255,255,255,.94),rgba(255,255,255,.8))}
+  body[data-theme="light"] .art{box-shadow:0 .4em 1.1em rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.06) inset}
+  body[data-theme="light"] .title{text-shadow:none}
+</style>
+</head>
+<body data-theme="glass" class="empty">
+<div id="stage">
+  <div class="card panel-base" id="card">
+    <div class="art" id="art"><img id="artimg" alt=""></div>
+    <div class="meta">
+      <div class="label" id="labelwrap"><span class="dot"></span><span class="txt" id="label">Now playing</span></div>
+      <div class="title" id="title"><span id="titletext"></span></div>
+      <div class="artist" id="artist"></div>
+      <div class="album" id="album"></div>
+      <div class="prog" id="prog">
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="times" id="times"><span id="tpos">0:00</span><span id="tdur">0:00</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lyrics panel-base hide" id="lyrics">
+    <div class="lyr-head"><span class="spark"></span><span id="lyr-title">Lyrics</span><span class="src" id="lyr-src"></span></div>
+    <div class="lyr-body" id="lyr-body"></div>
+  </div>
+
+  <div class="queue panel-base hide" id="queue">
+    <div class="qhead"><span id="qhead-title">Suggested next</span><b id="qcount"></b></div>
+    <div class="qrows" id="qrows"></div>
+  </div>
+</div>
+<script>
+(function(){
+  // Fixed design sizes in em; the whole overlay is uniformly scaled to the OBS box.
+  var CARD_W = 27.9, CARD_H = 10.7, GAP = 0.8, QUEUE_W = 18.8, QUEUE_HEAD = 3.2, ROW_H = 2.45;
+  var LYR_W = 20.4, LYR_HEAD = 2.4, LYR_LINE = 1.65;
+
+  var $ = {};
+  ['stage','card','art','artimg','labelwrap','label','title','titletext','artist','album','prog','times',
+   'fill','tpos','tdur','queue','qrows','qcount','lyrics','lyr-body','lyr-title','lyr-src']
+    .forEach(function(id){ $[id.replace('-','')] = document.getElementById(id); });
+  $.lyrBody = document.getElementById('lyr-body');
+  $.lyrTitle = document.getElementById('lyr-title');
+  $.lyrSrc = document.getElementById('lyr-src');
+  $.qheadTitle = document.getElementById('qhead-title');
+
+  var body = document.body;
+  var S = {
+    settings:null, trackId:null, queueSig:'', queueLen:0, queueOn:false,
+    lyricsOn:false, lyricLines:[], lyricIdx:-1, lyricMode:'none', lyricSig:'', marqueeKey:'',
+    lyrNodes:[], lyrPool:null, lyrCount:0, lyrHighlight:null,
+    basePos:0, baseAt:0, rate:1, duration:0, playing:false, artToken:'', now:null,
+    clockRevision:null, clockOffset:0, lastApiPosition:null
+  };
+  var DEMO = /[?&]demo=1/.test(location.search);
+  var LYRICS_ONLY = /^\/lyrics\/?$/i.test(location.pathname);
+  var QUEUE_ONLY = /^\/queue\/?$/i.test(location.pathname);
+  if(LYRICS_ONLY) body.classList.add('lyrics-only');
+  if(QUEUE_ONLY) body.classList.add('queue-only');
+
+  function fmt(s){
+    if(!isFinite(s) || s < 0) s = 0;
+    s = Math.floor(s);
+    var m = Math.floor(s/60), r = s%60;
+    if(m >= 60){ var h = Math.floor(m/60); m = m%60; return h+':'+(m<10?'0':'')+m+':'+(r<10?'0':'')+r; }
+    return m+':'+(r<10?'0':'')+r;
+  }
+  function setText(node, t){ if(node.textContent !== t) node.textContent = t; }
+  function noteTile(){
+    var d = document.createElement('div');
+    d.className = 'qthumb qnote';
+    d.innerHTML = '<svg viewBox="0 0 24 24" width="55%" height="55%" aria-hidden="true"><path fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>';
+    return d;
+  }
+
+  function applySettings(st){
+    if(!st) return;
+    var root = document.documentElement.style;
+    body.setAttribute('data-theme', st.theme || 'glass');
+    root.setProperty('--accent', st.accent || '#ff2d55');
+    root.setProperty('--accent2', st.accent2 || '#7c5cff');
+    root.setProperty('--radius', (1.05 * (st.corner == null ? 1 : st.corner)).toFixed(3) + 'em');
+    root.setProperty('--blur', Math.round(20 * (st.blur == null ? 1 : st.blur)) + 'px');
+    body.style.opacity = (st.opacity == null ? 1 : st.opacity);
+    body.classList.toggle('dim-paused', !!st.dimWhenPaused);
+    body.classList.toggle('hide-paused', !!st.hideWhenPaused);
+    body.classList.toggle('upper', st.textCase === 'upper');
+    body.classList.toggle('clean', !!st.transparentBackground);
+    body.classList.toggle('reduce-motion', !!st.reduceMotion);
+    body.classList.toggle('lyrics-center', st.lyricsAlign === 'center');
+    if(st.label) setText($.label, st.label);
+    $.labelwrap.classList.toggle('hide', st.showLabel === false);
+    $.art.classList.toggle('hide', st.showArt === false);
+    $.times.classList.toggle('hide', st.showTimes === false);
+    $.album.classList.toggle('hide', st.showAlbum === false);
+    layout();
+  }
+
+  function marqueeCheck(){
+    var t = $.title, inner = $.titletext;
+    var full = (S.now && S.now.title) || '';
+    var marqueeAllowed = !(S.settings && (S.settings.titleMarquee === false || S.settings.reduceMotion));
+    var key = full + '|' + Math.round(t.clientWidth) + '|' + marqueeAllowed;
+    if(key === S.marqueeKey) return;
+    S.marqueeKey = key;
+    t.classList.remove('scroll');
+    inner.style.animation = 'none';
+    inner.textContent = full;
+    void t.offsetWidth;
+    if(full && marqueeAllowed && inner.scrollWidth > t.clientWidth + 6){
+      inner.textContent = full + '\u2003\u2022\u2003' + full;
+      inner.style.animation = '';
+      t.classList.add('scroll');
+    }
+  }
+
+  function renderNow(now, latency){
+    var st = S.settings || {};
+    if(!now || !now.title){
+      body.classList.remove('paused');
+      S.now = null; S.trackId = null; S.marqueeKey = ''; S.clockRevision = null; S.lastApiPosition = null;
+      S.lyricsOn = false; $.lyrics.classList.add('hide');
+      var ph = (st.placeholder || '').trim();
+      if(ph){
+        // stay visible with friendly idle text (handy when nothing is playing)
+        body.classList.remove('empty');
+        $.card.classList.remove('swap');
+        $.title.classList.remove('scroll');
+        $.titletext.textContent = ph;
+        setText($.artist, '');
+        setText($.album, '');
+        $.artimg.classList.remove('on');
+        $.prog.classList.add('hide');
+        $.labelwrap.classList.add('hide');
+      } else {
+        body.classList.add('empty');
+      }
+      layout();
+      return;
+    }
+    $.labelwrap.classList.toggle('hide', st.showLabel === false);
+    var changed = now.trackId !== S.trackId;
+    if(changed){
+      S.trackId = now.trackId;
+      $.title.classList.remove('scroll');
+      $.titletext.textContent = now.title || '';
+      setText($.artist, now.artist || '');
+      setText($.album, now.album || '');
+      $.card.classList.remove('swap'); void $.card.offsetWidth; $.card.classList.add('swap');
+      $.artimg.classList.remove('on');
+      S.artToken = '';
+    } else {
+      if(!S.now || now.title !== S.now.title){
+        $.title.classList.remove('scroll'); $.titletext.textContent = now.title || ''; S.marqueeKey = '';
+      }
+      setText($.artist, now.artist || '');
+      setText($.album, now.album || '');
+    }
+    if((now.art || '') !== S.artToken){
+      S.artToken = now.art || '';
+      if(S.artToken){
+        var img = new Image();
+        var expectedArt = S.artToken;
+        img.onload = function(){ if(S.artToken === expectedArt){ $.artimg.src = expectedArt; $.artimg.classList.add('on'); } };
+        img.src = expectedArt;
+      } else {
+        $.artimg.classList.remove('on');
+      }
+    }
+    // Reconcile against the existing monotonic clock. Do not repeatedly rewind
+    // for rounding jitter or a temporarily unchanged API sample; real seeks and
+    // pause/resume transitions carry a new clockRevision and snap immediately.
+    var oldPosition = S.now ? currentPosition() : 0;
+    var apiPosition = Number(now.position) || 0;
+    var nextRate = Number(now.rate) > 0 ? Number(now.rate) : 1;
+    var nextPlaying = !!now.playing;
+    var nextRevision = now.clockRevision == null ? null : now.clockRevision;
+    var nextOffset = Number(now.clockOffset) || 0;
+    var candidate = apiPosition + (nextPlaying ? Math.max(0, Math.min(0.2, Number(latency) || 0)) * nextRate : 0);
+    var continuous = !changed && S.now && S.playing && nextPlaying &&
+                     nextRevision === S.clockRevision && nextOffset === S.clockOffset;
+    if(continuous && candidate < oldPosition &&
+       (oldPosition - candidate < .9 || (S.lastApiPosition !== null && Math.abs(apiPosition - S.lastApiPosition) < .01))){
+      candidate = oldPosition;
+    }
+    S.now = now;
+    S.basePos = Math.max(0, candidate); S.baseAt = performance.now();
+    S.rate = nextRate; S.duration = Number(now.duration) || 0; S.playing = nextPlaying;
+    S.clockRevision = nextRevision; S.clockOffset = nextOffset; S.lastApiPosition = apiPosition;
+
+    body.classList.remove('empty');
+    body.classList.toggle('paused', !now.playing);
+    var displayLabel = st.label || now.sourceLabel || 'Now playing';
+    setText($.label, now.playing ? displayLabel : 'Paused \u2014 ' + displayLabel);
+    $.prog.classList.toggle('hide', !S.duration || (S.settings && S.settings.showProgress === false));
+    marqueeCheck();
+    layout();
+  }
+
+  // ---------------- lyrics ----------------
+  function renderLyrics(ly, now){
+    var st = S.settings || {};
+    if(st.showLyrics === false || (ly && ly.instrumental && st.lyricsHideInstrumental && !LYRICS_ONLY)){
+      S.lyricsOn = false;
+      $.lyrics.classList.add('hide');
+      S.lyricLines = []; S.lyricIdx = -1; S.lyricMode = 'none'; S.lyricSig = '';
+      layout();
+      return;
+    }
+    // Show an explicit waiting message even if Windows has not reported a track.
+    // The standalone source remains visible even when the idle placeholder is blank.
+    if(LYRICS_ONLY) body.classList.remove('empty');
+
+    var hasLines = !!(ly && ly.available && ly.lines && ly.lines.length > 0);
+    $.lyrics.classList.remove('hide');
+    S.lyricsOn = true;
+
+    if(!hasLines){
+      // Never fail silently: say what is happening in the lyrics card.
+      var reason = !now ? 'no-title' : ((ly && ly.reason) || 'pending');
+      var msg, sub = '';
+      if(reason === 'pending'){ msg = 'Looking up lyrics'; }
+      else if(reason === 'instrumental'){ msg = 'Instrumental track'; sub = 'No lyrics for this one'; }
+      else if(reason === 'no-lyrics'){ msg = 'No lyrics available'; sub = 'Try Search / paste lyrics in the app'; }
+      else if(reason === 'error'){ msg = 'Could not reach the lyrics service'; sub = 'Retry or paste lyrics in the app'; }
+      else if(reason === 'no-title'){ msg = 'Waiting for a song'; sub = 'Play music in YouTube Music'; }
+      else { msg = 'No lyrics found for this track'; sub = 'Try Search / paste lyrics in the app'; }
+
+      var sig0 = 'msg|' + msg + '|' + sub;
+      if(sig0 !== S.lyricSig){
+        S.lyricSig = sig0;
+        S.lyricLines = []; S.lyricIdx = -1; S.lyricMode = 'none';
+        S.lyrNodes = []; S.lyrPool = null; S.lyrCount = 0;
+        $.lyrics.classList.remove('lyr-synced');
+        $.lyrBody.innerHTML = '';
+        $.lyrBody.style.minHeight = '';
+        var m = document.createElement('div');
+        m.className = 'lyr-msg';
+        m.textContent = msg + (reason === 'pending' ? '\u2026' : '');
+        $.lyrBody.appendChild(m);
+        if(sub){
+          var s2 = document.createElement('div');
+          s2.className = 'lyr-msg';
+          s2.style.opacity = '.7';
+          s2.textContent = sub;
+          $.lyrBody.appendChild(s2);
+        }
+      }
+      setText($.lyrSrc, (ly && ly.source) ? ly.source : '');
+      layout();
+      return;
+    }
+
+    // Include all content: an edit to a middle line must appear immediately too.
+    var sig = (ly.synced ? 's' : 'p') + '|' + (ly.source || '') + '|' + JSON.stringify(ly.lines);
+    if(sig !== S.lyricSig){
+      S.lyricSig = sig;
+      S.lyricLines = ly.lines;
+      S.lyricMode = ly.synced ? 'synced' : 'static';
+      S.lyricIdx = -1; S.lyrCount = 0; S.lyrNodes = []; S.lyrPool = null;
+      $.lyrBody.innerHTML = '';
+      $.lyrBody.style.minHeight = '';
+
+      if(ly.synced){
+        $.lyrics.classList.add('lyr-synced');
+        var pool = document.createElement('div');
+        pool.style.display = 'none';
+        ly.lines.forEach(function(l, i){
+          var d = document.createElement('div');
+          d.className = 'lyr-line';
+          d.textContent = l.x || '\u266a';
+          d.dataset.i = i;
+          pool.appendChild(d);
+        });
+        $.lyrBody.appendChild(pool);
+        S.lyrPool = pool;
+        S.lyrNodes = Array.prototype.slice.call(pool.children);
+      } else {
+        $.lyrics.classList.remove('lyr-synced');
+        var box = document.createElement('div');
+        box.className = 'lyr-static';
+        box.textContent = ly.lines.map(function(l){ return l.x; }).join('\n').trim();
+        $.lyrBody.appendChild(box);
+      }
+    }
+    setText($.lyrSrc, (ly.source || 'LRCLIB'));
+    layout();
+  }
+
+  // Keeps a rolling window of N lines starting at the line being sung, karaoke style.
+  function updateLyricWindow(){
+    if(!S.lyricsOn || S.lyricMode !== 'synced' || !S.lyrNodes.length) return;
+    var st = S.settings || {};
+    var n = Math.max(1, Math.min(6, st.lyricsLines == null ? 2 : st.lyricsLines));
+    var highlight = st.lyricsKaraoke !== false;
+    var t = currentPosition() + (Number(st.lyricsOffsetSeconds) || 0);
+
+    var idx = -1;
+    for(var i = 0; i < S.lyricLines.length; i++){
+      if(S.lyricLines[i].t <= t + 0.12) idx = i; else break;
+    }
+    // Also refresh when the user changes line count or highlighting.
+    if(idx === S.lyricIdx && n === S.lyrCount && highlight === S.lyrHighlight) return;
+    S.lyricIdx = idx;
+    S.lyrCount = n;
+    S.lyrHighlight = highlight;
+    $.lyrics.classList.toggle('lyr-synced', highlight);
+
+    var nodes = S.lyrNodes;
+    for(var j = 0; j < nodes.length; j++){
+      nodes[j].classList.toggle('active', highlight && j === idx);
+      nodes[j].classList.toggle('done', highlight && j < idx);
+    }
+
+    var start = idx < 0 ? 0 : idx;
+    var frag = document.createDocumentFragment();
+    var shown = 0;
+    for(var k = start; k < nodes.length && shown < n; k++){
+      frag.appendChild(nodes[k]);
+      shown++;
+    }
+    // if we ran off the end, back-fill so the panel keeps its height
+    for(var back = start - 1; back >= 0 && shown < n; back--){
+      frag.insertBefore(nodes[back], frag.firstChild);
+      shown++;
+    }
+    $.lyrBody.innerHTML = '';
+    $.lyrBody.appendChild(frag);
+    $.lyrBody.style.minHeight = (n * LYR_LINE).toFixed(2) + 'em';
+    layout();
+  }
+
+  function currentPosition(){
+    if(!S.now) return 0;
+    var pos = S.basePos;
+    if(S.playing) pos += Math.max(0, performance.now() - S.baseAt) / 1000 * S.rate;
+    if(S.duration) pos = Math.min(pos, S.duration);
+    return pos;
+  }
+
+  // ---------------- queue ----------------
+  function renderQueue(q){
+    var st = S.settings || {};
+    var items = (q && q.items) || [];
+    var want = Math.max(0, Math.min(8, st.queueCount == null ? 4 : st.queueCount));
+    var show = QUEUE_ONLY || (st.showQueue !== false && want > 0 && items.length > 0);
+    items = items.slice(0, want);
+    S.queueOn = show; S.queueLen = show ? items.length : 0;
+    $.queue.classList.toggle('hide', !show);
+    setText($.qheadTitle, q && q.source === 'browser' ? 'Up next' : 'Suggested next');
+    if(!show){ layout(); return; }
+    if(!items.length){
+      var msg = !S.now ? 'Waiting for a song' : (q && q.source === 'browser' ? 'Your queue is empty' : 'No suggestions available yet');
+      var emptySig = 'empty|' + msg;
+      if(S.queueSig !== emptySig){
+        S.queueSig = emptySig; $.qrows.innerHTML = '';
+        var empty = document.createElement('div'); empty.className = 'qempty'; empty.textContent = msg; $.qrows.appendChild(empty);
+      }
+      setText($.qcount, ''); layout(); return;
+    }
+
+    var sig = items.map(function(i){ return i.videoId + i.title + i.artist + i.thumb; }).join('|')
+              + '|' + !!st.showQueueArt + !!st.showQueueNumbers + !!st.showQueueArtist;
+    if(sig !== S.queueSig){
+      S.queueSig = sig;
+      $.qrows.innerHTML = '';
+      items.forEach(function(it, idx){
+        var row = document.createElement('div');
+        row.className = 'qrow'; row.style.animationDelay = (idx*60)+'ms';
+
+        var num = document.createElement('div');
+        num.className = 'qnum' + (st.showQueueNumbers === false ? ' hide' : '');
+        num.textContent = (idx+1);
+        row.appendChild(num);
+
+        if(st.showQueueArt !== false){
+          if(it.thumb){
+            var img = document.createElement('img');
+            img.className = 'qthumb'; img.src = it.thumb; img.loading = 'lazy';
+            img.onerror = function(){ this.replaceWith(noteTile()); };
+            row.appendChild(img);
+          } else {
+            row.appendChild(noteTile());
+          }
+        }
+
+        var meta = document.createElement('div'); meta.className = 'qmeta';
+        var t = document.createElement('div'); t.className = 'qtitle'; t.textContent = it.title || '';
+        var a = document.createElement('div');
+        a.className = 'qartist' + (st.showQueueArtist === false ? ' hide' : '');
+        a.textContent = it.artist || it.album || '';
+        meta.appendChild(t); meta.appendChild(a);
+        row.appendChild(meta);
+        $.qrows.appendChild(row);
+      });
+    }
+    setText($.qcount, String(items.length));
+    layout();
+  }
+
+  // ---------------- layout ----------------
+  function layout(){
+    var w = window.innerWidth, h = window.innerHeight;
+    var st = S.settings || {};
+    var queueOn = S.queueOn, lyricsOn = S.lyricsOn;
+
+    var queueH = QUEUE_HEAD + Math.max(1, S.queueLen) * ROW_H;
+    var lyrLines = Math.max(1, Math.min(6, st.lyricsLines == null ? 2 : st.lyricsLines));
+    var lyrBodyLines = (S.lyricMode === 'none') ? 2
+                      : (S.lyricMode === 'static' ? Math.min(lyrLines + 2, 8) : lyrLines);
+    var lyrH = LYR_HEAD + lyrBodyLines * LYR_LINE + 1.4;
+
+    if(QUEUE_ONLY){
+      $.stage.classList.remove('stacked');
+      body.classList.remove('pos-center','pos-bc','pos-bl','pos-br','pos-tl','pos-tr');
+      var qfit = Math.min(w / (QUEUE_W * 16), h / (Math.max(5.8, queueH) * 16));
+      var qscale = Math.max(0.25, Math.min(2.5, qfit * (st.scale == null ? 1 : st.scale)));
+      document.documentElement.style.setProperty('--s', qscale.toFixed(4));
+      return;
+    }
+
+    if(LYRICS_ONLY){
+      $.stage.classList.remove('stacked');
+      body.classList.remove('pos-center','pos-bc','pos-bl','pos-br','pos-tl','pos-tr');
+      var factor = Math.min(w / (LYR_W * 16), h / (Math.max(6.3, lyrH) * 16));
+      var textScale = Math.max(0.25, Math.min(2.5, factor * (st.scale == null ? 1 : st.scale)));
+      document.documentElement.style.setProperty('--s', textScale.toFixed(4));
+      return;
+    }
+
+    var cardW = CARD_W - (st.showArt === false ? 9.6 : 0);
+    var midW = lyricsOn ? LYR_W : (queueOn ? QUEUE_W : 0);
+    var rightW = (lyricsOn && queueOn) ? QUEUE_W : 0;
+
+    var designW = cardW + (midW ? GAP + midW : 0) + (rightW ? GAP + rightW : 0);
+    var designH = Math.max(CARD_H, lyricsOn ? lyrH : 0, queueOn ? queueH : 0);
+
+    // Choose side-by-side vs stacked by whichever renders larger text in the box
+    // OBS gave us (ties favour side-by-side, which looks like the intended design).
+    var stackW = Math.max(cardW, lyricsOn ? LYR_W : 0, queueOn ? QUEUE_W : 0);
+    var stackH = CARD_H + (lyricsOn ? GAP + lyrH : 0) + (queueOn ? GAP + queueH : 0);
+    var horizontalPossible = (lyricsOn || queueOn);
+    var sideFit = Math.min(w / (designW * 16), h / (designH * 16));
+    var stackFit = Math.min(w / (stackW * 16), h / (stackH * 16));
+    var stacked = horizontalPossible && (stackFit > sideFit * 1.02);
+    if(stacked){
+      designW = stackW;
+      designH = stackH;
+    }
+    $.stage.classList.toggle('stacked', stacked);
+
+    var pos = st.align || 'center';
+    var padX = pos === 'center' ? 0 : 1, padY = pos === 'center' ? 0 : 1;
+    var fit = Math.min(Math.max(1, w - padX*16) / (designW*16), Math.max(1, h - padY*16) / (designH*16));
+    var want = st.scale == null ? 1 : st.scale;
+    var s = Math.max(0.1, Math.min(Math.min(want, fit), 4));
+
+    body.classList.remove('pos-center','pos-bc','pos-bl','pos-br','pos-tl','pos-tr');
+    body.classList.add(pos === 'bottomcenter' ? 'pos-bc' : pos === 'bottomleft' ? 'pos-bl'
+      : pos === 'bottomright' ? 'pos-br' : pos === 'topleft' ? 'pos-tl'
+      : pos === 'topright' ? 'pos-tr' : 'pos-center');
+    document.documentElement.style.setProperty('--s', s.toFixed(4));
+  }
+
+  function frame(){
+    if(S.now){
+      var pos = currentPosition();
+      $.fill.style.width = (S.duration ? Math.max(0, Math.min(100, pos/S.duration*100)) : 0) + '%';
+      setText($.tpos, fmt(pos));
+      setText($.tdur, (S.settings && S.settings.showRemainingTime) ? '-' + fmt(Math.max(0, S.duration - pos)) : fmt(S.duration));
+    }
+    updateLyricWindow();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------- demo ----------------
+  var DEMO_STATE = {
+    now:{title:"Sample song", artist:"Overlay test", album:"Demo mode", 
+         position:78, duration:239, rate:1, playing:true, sourceLabel:"YouTube Music",
+         trackId:"demo",
+         art:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMyYTRhODYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM4ZDJhNWUiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0idXJsKCNnKSIvPjxjaXJjbGUgY3g9IjE1MCIgY3k9IjE1MCIgcj0iNTgiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIuMjgiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4="},
+    queue:{items:[
+      {title:"Creep", artist:"Radiohead", videoId:"d1", thumb:""},
+      {title:"Everlong", artist:"Foo Fighters", videoId:"d2", thumb:""},
+      {title:"Dreams", artist:"Fleetwood Mac", videoId:"d3", thumb:""},
+      {title:"Basket Case", artist:"Green Day", videoId:"d4", thumb:""},
+      {title:"Under the Bridge", artist:"Red Hot Chili Peppers", videoId:"d5", thumb:""}
+    ]},
+    lyrics:{available:true, synced:true, instrumental:false, pending:false, source:"SAMPLE",
+      lines:[
+        {t:0,x:"This is a lyrics test"},
+        {t:12,x:"The next line appears here"},
+        {t:24,x:"Your OBS source is working"},
+        {t:36,x:"Now play a song to try it"},
+        {t:48,x:"You can move this box anywhere"},
+        {t:60,x:"You can paste your own lyrics"},
+        {t:72,x:"This is a lyrics test"},
+        {t:84,x:"The next line appears here"},
+        {t:96,x:"Your OBS source is working"},
+        {t:108,x:"Now play a song to try it"},
+        {t:120,x:"You can move this box anywhere"}
+      ]}
+  };
+
+  var fails = 0, demoStart = performance.now();
+  async function poll(){
+    if(DEMO){
+      var local = JSON.parse(JSON.stringify(DEMO_STATE));
+      local.settings = S.settings || {theme:'glass', accent:'#ff2d55', accent2:'#7c5cff', showQueue:true,
+        queueCount:4, showProgress:true, showAlbum:true, showArt:true, showLabel:true, showTimes:true,
+        showQueueArt:true, showQueueNumbers:true, showQueueArtist:true, label:'Now playing (demo)',
+        dimWhenPaused:true, scale:1, align:'center', opacity:1, corner:1, blur:1,
+        showLyrics:true, lyricsLines:2, lyricsKaraoke:true, textCase:'normal', titleMarquee:true};
+      S.settings = local.settings;
+      applySettings(local.settings);
+      local.now.position = 78 + ((performance.now() - demoStart) / 1000 % 120);
+      renderNow(local.now, 0);
+      renderLyrics(local.lyrics, local.now);
+      renderQueue(local.queue);
+      setTimeout(poll, 500);
+      return;
+    }
+    try{
+      var started = performance.now();
+      var r = await fetch(LYRICS_ONLY ? '/api/lyrics-state' : (QUEUE_ONLY ? '/api/queue-state' : '/api/state'), {cache:'no-store'});
+      if(!r.ok) throw 0;
+      var j = await r.json();
+      var latency = (performance.now() - started) / 2000;
+      fails = 0;
+      S.settings = j.settings || S.settings;
+      applySettings(S.settings);
+      renderNow(j.now, latency);
+      renderLyrics(j.lyrics, j.now);
+      renderQueue(j.queue);
+    }catch(e){
+      if(++fails > 8) body.classList.add('empty');
+    }
+    setTimeout(poll, 350);
+  }
+
+  window.addEventListener('resize', function(){ layout(); marqueeCheck(); });
+  layout(); frame(); poll();
+})();
+</script>
+</body>
+</html>

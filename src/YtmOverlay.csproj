@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <AssemblyName>YTM-Overlay</AssemblyName>
+    <RootNamespace>YtmOverlay</RootNamespace>
+    <Version>0.0.0</Version>
+    <InformationalVersion>0.0.0 beta</InformationalVersion>
+    <Product>YouTube Music Overlay for OBS</Product>
+    <AssemblyTitle>YouTube Music Overlay</AssemblyTitle>
+    <Company>YTM Overlay contributors</Company>
+    <Description>Unofficial YouTube Music OBS overlay with viewer requests (beta).</Description>
+    <Copyright>Copyright (c) 2026 YTM Overlay contributors</Copyright>
+
+    <!-- single, self-contained .exe: nothing to install, no .NET runtime needed -->
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="overlay.html" LogicalName="YtmOverlay.overlay.html" />
+    <EmbeddedResource Include="bridge.js" LogicalName="YtmOverlay.bridge.js" />
+    <EmbeddedResource Include="chat_bridge.js" LogicalName="YtmOverlay.chat_bridge.js" />
+    <EmbeddedResource Include="chat_connect.html" LogicalName="YtmOverlay.chat_connect.html" />
+    <EmbeddedResource Include="requests.html" LogicalName="YtmOverlay.requests.html" />
+    <EmbeddedResource Include="request_overlay.html" LogicalName="YtmOverlay.request_overlay.html" />
+  </ItemGroup>
+
+</Project>

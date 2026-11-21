@@ -1,0 +1,22 @@
+# Build, test and editor output
+**/bin/
+**/obj/
+**/artifacts/
+publish/
+release-output/
+.vs/
+.vscode/
+*.user
+*.suo
+*.log
+__pycache__/
+
+# The downloadable binary belongs in GitHub Releases, not the source repository.
+release/*.exe
+release/*.zip
+
+# Never commit private runtime data or bookmark secrets.
+YTM-Overlay/
+settings.json
+requests.json
+saved-lyrics.json

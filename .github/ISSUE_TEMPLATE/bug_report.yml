@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible beta issue
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include bookmark code, pairing keys, cookies, stream keys, private chat text, or personal information."
+  - type: input
+    id: version
+    attributes:
+      label: Overlay version
+      placeholder: v0.0.0 beta
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows, browser and OBS versions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include which source or chat platform is involved.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true

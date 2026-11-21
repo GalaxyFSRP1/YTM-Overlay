@@ -1,0 +1,38 @@
+name: Publish v0.0.0 beta
+
+# Explicitly manual: uploading this repository does not publish a release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prerelease:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Windows x64 executable
+        run: dotnet publish src/YtmOverlay.csproj -c Release -r win-x64 --self-contained true -o release-output
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          Move-Item release-output/YTM-Overlay.exe release-output/YTM-Overlay-v0.0.0-beta.exe
+          $hash = (Get-FileHash release-output/YTM-Overlay-v0.0.0-beta.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  YTM-Overlay-v0.0.0-beta.exe" | Out-File release-output/SHA256SUMS.txt -Encoding ascii
+          python tools/make_notices.py src/obj/project.assets.json src/bin/Release/net10.0-windows10.0.19041.0/win-x64/YTM-Overlay.runtimeconfig.json release-output/NOTICES.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create v0.0.0 release-output/YTM-Overlay-v0.0.0-beta.exe release-output/SHA256SUMS.txt release-output/NOTICES.txt --target "$env:GITHUB_SHA" --title "v0.0.0 beta" --notes-file RELEASE_NOTES.md --prerelease
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
